@@ -337,10 +337,13 @@ class LockCodeManagerCodeSlotInSyncEntity(
 
                 if self._get_entity_state(key) is None:
                     return
+
+            # Check if we need to update
             if self._should_update():
                 await self.coordinator.async_refresh()
                 await asyncio.sleep(1)
-            
+
+            # Check again after refresh
             if self._should_update():
                 desired_state = self._get_entity_state(ATTR_ACTIVE)
                 desired_pin = self._get_entity_state(CONF_PIN)
@@ -387,6 +390,11 @@ class LockCodeManagerCodeSlotInSyncEntity(
                         )
                 await asyncio.sleep(1)
                 await self.coordinator.async_refresh()
+            else:
+                # Everything is in sync
+                self._attr_is_on = True
+                if self._entity_added:
+                    self.async_write_ha_state()
 
     def _should_update(self):
             desired_state = self._get_entity_state(ATTR_ACTIVE)
