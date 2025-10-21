@@ -351,8 +351,8 @@ async def async_update_listener(hass: HomeAssistant, config_entry: ConfigEntry) 
 
     configured_platforms: set[Platform] = hass_data[entry_id][ATTR_CONFIGURED_PLATFORMS]
 
-    curr_slots: dict[int, Any] = {**config_entry.data.get(CONF_SLOTS, {})}
-    new_slots: dict[int, Any] = {**config_entry.options.get(CONF_SLOTS, {})}
+    curr_slots: dict[str, Any] = {**config_entry.data.get(CONF_SLOTS, {})}
+    new_slots: dict[str, Any] = {**config_entry.options.get(CONF_SLOTS, {})}
     curr_locks: list[str] = [*config_entry.data.get(CONF_LOCKS, [])]
     new_locks: list[str] = [*config_entry.options.get(CONF_LOCKS, [])]
 
@@ -374,10 +374,10 @@ async def async_update_listener(hass: HomeAssistant, config_entry: ConfigEntry) 
         configured_platforms.update(new_platforms)
 
     # Identify changes that need to be made
-    slots_to_add: dict[int, Any] = {
+    slots_to_add: dict[str, Any] = {
         k: v for k, v in new_slots.items() if k not in curr_slots
     }
-    slots_to_remove: dict[int, Any] = {
+    slots_to_remove: dict[str, Any] = {
         k: v for k, v in curr_slots.items() if k not in new_slots
     }
     locks_to_add: list[str] = [lock for lock in new_locks if lock not in curr_locks]

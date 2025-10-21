@@ -207,39 +207,40 @@ class ZWaveJSLock(BaseLock):
             ZWAVE_JS_DOMAIN, SERVICE_CLEAR_LOCK_USERCODE, service_data
         )
 
-    async def async_get_usercodes(self) -> dict[int, int | str]:
+    async def async_get_usercodes(self) -> dict[str, int | str]:
         """Get dictionary of code slots and usercodes."""
-        code_slots: Iterable[int] = (
-            int(code_slot)
+        code_slots: Iterable[str] = (
+            str(code_slot)
             for entry in self.hass.config_entries.async_entries(DOMAIN)
             for code_slot in get_entry_data(entry, CONF_SLOTS, {})
             if self.lock.entity_id not in get_entry_data(entry, CONF_LOCKS, [])
         )
-        data: dict[int, int | str] = {}
-        code_slot = 1
+        data: dict[str, int | str] = {}
+        code_slot_int = 1
 
         if not await self.async_is_connection_up():
             raise LockDisconnected
 
         try:
             for slot in get_usercodes(self.node):
-                code_slot = int(slot["code_slot"])
+                code_slot_int = int(slot["code_slot"])
+                code_slot_key = str(code_slot_int)
                 usercode: str = slot["usercode"] or ""
                 in_use: bool | None = slot["in_use"]
                 # Retrieve code slots that haven't been populated yet
-                if in_use is None and code_slot in code_slots:
-                    usercode_resp = await get_usercode_from_node(self.node, code_slot)
+                if in_use is None and code_slot_key in code_slots:
+                    usercode_resp = await get_usercode_from_node(self.node, code_slot_int)
                     usercode = slot["usercode"] = usercode_resp["usercode"] or ""
                     in_use = slot["in_use"] = usercode_resp["in_use"]
 
                 if not in_use:
-                    if code_slot in code_slots:
+                    if code_slot_key in code_slots:
                         _LOGGER.debug(
                             "Lock %s code slot %s not enabled",
                             self.lock.entity_id,
-                            code_slot,
+                            code_slot_key,
                         )
-                    data[code_slot] = ""
+                    data[code_slot_key] = ""
                 # Special handling if usercode is all *'s
                 elif usercode and len(str(usercode)) * "*" == str(usercode):
                     # Build data from entities
@@ -250,13 +251,9 @@ class ZWaveJSLock(BaseLock):
                         )
                         if self.lock.entity_id
                         in get_entry_data(config_entry, CONF_LOCKS, [])
-                        and int(code_slot)
-                        in (
-                            int(slot)
-                            for slot in get_entry_data(config_entry, CONF_SLOTS, {})
-                        )
+                        and code_slot_key in get_entry_data(config_entry, CONF_SLOTS, {})
                     )
-                    base_unique_id = f"{config_entry.entry_id}|{code_slot}"
+                    base_unique_id = f"{config_entry.entry_id}|{code_slot_key}"
                     active = self.ent_reg.async_get_entity_id(
                         SWITCH_DOMAIN, DOMAIN, f"{base_unique_id}|{CONF_ENABLED}"
                     )
@@ -269,28 +266,28 @@ class ZWaveJSLock(BaseLock):
                     pin_state = self.hass.states.get(pin_entity_id)
                     assert active_state
                     assert pin_state
-                    if code_slot in code_slots:
+                    if code_slot_key in code_slots:
                         _LOGGER.debug(
                             (
                                 "PIN is masked for lock %s code slot %s so "
                                 "assuming value from PIN entity %s"
                             ),
                             self.lock.entity_id,
-                            code_slot,
+                            code_slot_key,
                             pin_entity_id,
                         )
                     if active_state.state == STATE_ON and pin_state.state.isnumeric():
-                        data[code_slot] = pin_state.state
+                        data[code_slot_key] = pin_state.state
                     else:
-                        data[code_slot] = ""
+                        data[code_slot_key] = ""
                 else:
-                    if code_slot in code_slots:
+                    if code_slot_key in code_slots:
                         _LOGGER.debug(
                             "Lock %s code slot %s has a PIN",
                             self.lock.entity_id,
-                            code_slot,
+                            code_slot_key,
                         )
-                    data[code_slot] = usercode or ""
+                    data[code_slot_key] = usercode or ""
         except Exception as err:
             raise LockDisconnected from err
 

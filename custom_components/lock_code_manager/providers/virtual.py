@@ -73,9 +73,9 @@ class VirtualLock(BaseLock):
             raise HomeAssistantError(f"Code slot {code_slot} not found")
         self._data.pop(str(code_slot))
 
-    async def async_get_usercodes(self) -> dict[int, int | str]:
+    async def async_get_usercodes(self) -> dict[str, int | str]:
         """Get dictionary of code slots and usercodes."""
         return {
-            int(slot_key): code_slot["code"]
+            slot_key: code_slot["code"]
             for slot_key, code_slot in self._data.items()
         }

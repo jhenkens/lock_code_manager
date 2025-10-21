@@ -181,36 +181,36 @@ class BaseLock:
         async with self._aio_lock:
             await self.async_clear_usercode(code_slot)
 
-    def get_usercodes(self) -> dict[int, int | str]:
+    def get_usercodes(self) -> dict[str, int | str]:
         """
         Get dictionary of code slots and usercodes.
 
         Called by data coordinator to get data for code slot sensors.
 
-        Key is code slot, value is usercode, e.g.:
+        Key is code slot (as string), value is usercode, e.g.:
         {
-            1: '1234',
+            '1': '1234',
             'B': '5678',
         }
         """
         raise NotImplementedError()
 
-    async def async_get_usercodes(self) -> dict[int, int | str]:
+    async def async_get_usercodes(self) -> dict[str, int | str]:
         """
         Get dictionary of code slots and usercodes.
 
         Called by data coordinator to get data for code slot sensors.
 
-        Key is code slot, value is usercode, e.g.:
+        Key is code slot (as string), value is usercode, e.g.:
         {
-            1: '1234',
+            '1': '1234',
             'B': '5678',
         }
         """
         return await self.hass.async_add_executor_job(self.get_usercodes)
 
     @final
-    async def async_internal_get_usercodes(self) -> dict[int, int | str]:
+    async def async_internal_get_usercodes(self) -> dict[str, int | str]:
         """
         Get dictionary of code slots and usercodes.
 
