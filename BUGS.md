@@ -87,43 +87,41 @@ ERROR Platform lock_code_manager does not generate unique IDs. ID 01K841CPSS0GPZ
 - Also triggered when changing config entry settings
 
 **Root Cause:**
-Dispatcher handlers in `sensor.py` and `binary_sensor.py` were not idempotent. When dispatcher signals were sent (either during initial setup due to BUG-001, or during config updates), the handlers would always create new entities without checking if they already existed in the entity registry.
+Initially thought to be due to non-idempotent dispatcher handlers, but the real root cause was **BUG-001** (platform setup errors) causing dispatcher signals to fire multiple times during initial setup.
+
+After fixing BUG-001, realized we were over-engineering the solution by manually tracking entities. Home Assistant's `entity_platform.py` **already has built-in duplicate prevention** based on `unique_id`.
 
 **Impact:**
-- Duplicate entity registration errors in logs
-- Entities ignored (not created) when they should be
+- Duplicate entity registration errors in logs during initial setup (caused by BUG-001)
 - User confusion from error messages
-- Related to BUG-001 (platform setup errors causing duplicate dispatches)
+- Directly caused by BUG-001 platform setup issues
 
 **Fix Applied:**
-Made dispatcher handlers idempotent by checking entity registry before creating entities:
+**FINAL FIX (correct approach):** Removed all manual duplicate tracking and let Home Assistant's built-in duplicate prevention handle it.
 
-1. **sensor.py** (lines 36-40): Added check in `add_code_slot_entities()`
-   ```python
-   # Check if entity already exists
-   unique_id = f"{config_entry.entry_id}|{slot_key}|{ATTR_CODE}|{lock.lock.entity_id}"
-   if ent_reg.async_get_entity_id(SENSOR_DOMAIN, DOMAIN, unique_id):
-       return  # Entity already exists, skip
-   ```
+Home Assistant's entity platform automatically:
+1. Checks if an entity with the same `unique_id` already exists in the entity registry
+2. If it exists, calls `entity.add_to_platform_abort()` and skips adding the duplicate
+3. Logs appropriate error messages for debugging
 
-2. **binary_sensor.py** (lines 83-86): Added check in `add_code_slot_entities()`
-   ```python
-   # Check if entity already exists
-   unique_id = f"{config_entry.entry_id}|{slot_key}|{ATTR_IN_SYNC}|{lock.lock.entity_id}"
-   if ent_reg.async_get_entity_id(BINARY_SENSOR_DOMAIN, DOMAIN, unique_id):
-       return  # Entity already exists, skip
-   ```
+**Key Insight:** When entities have properly set `unique_id` attributes, `async_add_entities()` can be safely called multiple times. The platform handles deduplication automatically.
 
-Handlers now check if an entity with the same unique_id exists before creating a new one, preventing duplicates regardless of how many times the dispatcher signal is sent.
+**Initial (incorrect) approach:**
+We initially tried to manually track entities using `entities_added_tracker` set, checking before calling `async_add_entities()`. This caused "Entity not found" errors after restart because:
+- Entity registry persists across restarts
+- Our manual check would see entities in registry and skip creation
+- But entities weren't actually loaded in current session
 
 **Files Changed:**
-- `custom_components/lock_code_manager/sensor.py:36-40`
-- `custom_components/lock_code_manager/binary_sensor.py:83-86`
+- `custom_components/lock_code_manager/sensor.py:36-37` - Added explanatory comment
+- `custom_components/lock_code_manager/binary_sensor.py:83-84` - Added explanatory comment
+- Removed manual tracking code entirely
 
 **Testing:**
 - All 26 tests passing
-- Config updates (e.g., toggling read_only) no longer cause duplicate entity errors
-- Initial setup creates entities correctly without duplicate registration attempts
+- Entities created correctly on initial setup
+- Entities load correctly after Home Assistant restart
+- Config updates work without errors
 
 ---
 
