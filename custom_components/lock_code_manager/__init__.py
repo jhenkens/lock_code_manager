@@ -543,20 +543,6 @@ async def async_update_listener(hass: HomeAssistant, config_entry: ConfigEntry) 
                 hass, f"{DOMAIN}_{entry_id}_add_{key}", slot_key, ent_reg
             )
 
-        for lock_entity_id, lock in hass_data[entry_id][CONF_LOCKS].items():
-            if lock_entity_id in locks_to_add:
-                continue
-            _LOGGER.debug(
-                "%s (%s): Adding lock %s slot %s sensor",
-                entry_id,
-                entry_title,
-                lock_entity_id,
-                slot_key,
-            )
-            async_dispatcher_send(
-                hass, f"{DOMAIN}_{entry_id}_add_lock_slot", lock, slot_key, ent_reg
-            )
-
     # For all slots that are in both the old and new config, check if any of the
     # configuration options have changed
     for slot_key in set(curr_slots).intersection(new_slots):
