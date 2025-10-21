@@ -361,13 +361,18 @@ async def async_update_listener(hass: HomeAssistant, config_entry: ConfigEntry) 
 
     # Set up any platforms that the new slot configs need that haven't already been
     # setup
+    # Step 1: Collect all platforms needed by slot configurations
+    needed_platforms: set[Platform] = set()
+    for slot_config in new_slots.values():
+        for key, platform in PLATFORM_MAP.items():
+            if key in slot_config:
+                needed_platforms.add(platform)
+
+    # Step 2: Filter to only new platforms (not already configured, not calendar)
     new_platforms = [
         platform
-        for slot_config in new_slots.values()
-        for key, platform in PLATFORM_MAP.items()
-        if key in slot_config
-        and platform not in configured_platforms
-        and platform != Platform.CALENDAR
+        for platform in needed_platforms
+        if platform not in configured_platforms and platform != Platform.CALENDAR
     ]
 
     if new_platforms:
