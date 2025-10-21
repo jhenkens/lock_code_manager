@@ -48,7 +48,7 @@ from homeassistant.helpers import (
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import (
-    ATTR_SETUP_TASKS,
+    ATTR_CONFIGURED_PLATFORMS,
     CONF_LOCKS,
     CONF_NUMBER_OF_USES,
     CONF_READ_ONLY,
@@ -215,7 +215,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     hass.data[DOMAIN][entry_id] = {
         CONF_LOCKS: {},
         COORDINATORS: {},
-        ATTR_SETUP_TASKS: {},
+        ATTR_CONFIGURED_PLATFORMS: set(PLATFORMS),  # Track which platforms are configured
     }
 
     dev_reg = dr.async_get(hass)
@@ -290,23 +290,9 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
     entry_id = config_entry.entry_id
     hass_data = hass.data[DOMAIN]
 
-    # Cancel any pending setup tasks
-    setup_tasks = hass_data.get(entry_id, {}).get(ATTR_SETUP_TASKS, {})
-    for task in setup_tasks.values():
-        if not task.done():
-            _LOGGER.debug("Cancelling pending setup task during unload")
-            task.cancel()
-    
-    # Wait for tasks to complete cancellation
-    if setup_tasks:
-        await asyncio.gather(*setup_tasks.values(), return_exceptions=True)
-
     unload_ok = await hass.config_entries.async_unload_platforms(
         config_entry,
-        {
-            *PLATFORMS,
-            *hass_data[entry_id][ATTR_SETUP_TASKS].keys(),
-        },
+        hass_data[entry_id][ATTR_CONFIGURED_PLATFORMS],
     )
 
     if unload_ok:
@@ -353,11 +339,6 @@ async def async_update_listener(hass: HomeAssistant, config_entry: ConfigEntry) 
     # of this function
     if not config_entry.options:
         return
-    """Update listener."""
-    # No need to update if there are no options because that only happens at the end
-    # of this function
-    if not config_entry.options:
-        return
 
     hass_data = hass.data[DOMAIN]
     ent_reg = er.async_get(hass)
@@ -368,9 +349,7 @@ async def async_update_listener(hass: HomeAssistant, config_entry: ConfigEntry) 
     entry_title = config_entry.title
     _LOGGER.info("%s (%s): Creating and/or updating entities", entry_id, entry_title)
 
-    setup_tasks: dict[str | Platform, asyncio.Task] = hass_data[entry_id][
-        ATTR_SETUP_TASKS
-    ]
+    configured_platforms: set[Platform] = hass_data[entry_id][ATTR_CONFIGURED_PLATFORMS]
 
     curr_slots: dict[int, Any] = {**config_entry.data.get(CONF_SLOTS, {})}
     new_slots: dict[int, Any] = {**config_entry.options.get(CONF_SLOTS, {})}
@@ -379,20 +358,20 @@ async def async_update_listener(hass: HomeAssistant, config_entry: ConfigEntry) 
 
     # Set up any platforms that the new slot configs need that haven't already been
     # setup
-    for platform in {
+    new_platforms = [
         platform
         for slot_config in new_slots.values()
         for key, platform in PLATFORM_MAP.items()
         if key in slot_config
-        and platform not in setup_tasks
+        and platform not in configured_platforms
         and platform != Platform.CALENDAR
-    }:
-        setup_tasks[platform] = config_entry.async_create_task(
-            hass,
-            hass.config_entries.async_forward_entry_setups(config_entry, [platform]),
-            "setup_new_platforms",
-        )
-    await asyncio.gather(*setup_tasks.values())
+    ]
+
+    if new_platforms:
+        # Forward all new platforms at once
+        await hass.config_entries.async_forward_entry_setups(config_entry, new_platforms)
+        # Track that these platforms are now configured
+        configured_platforms.update(new_platforms)
 
     # Identify changes that need to be made
     slots_to_add: dict[int, Any] = {
