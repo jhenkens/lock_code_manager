@@ -13,6 +13,7 @@ from homeassistant.core import HomeAssistant
 from custom_components.lock_code_manager.const import (
     CONF_LOCKS,
     CONF_NUM_SLOTS,
+    CONF_READ_ONLY,
     CONF_SLOTS,
     CONF_START_SLOT,
     DOMAIN,
@@ -111,6 +112,7 @@ async def test_config_flow_ui(hass: HomeAssistant):
     assert result["title"] == "test"
     assert result["data"] == {
         CONF_LOCKS: [LOCK_1_ENTITY_ID],
+        CONF_READ_ONLY: True,
         CONF_SLOTS: {
             1: {CONF_ENABLED: True, CONF_PIN: "1234"},
             2: {CONF_ENABLED: True, CONF_PIN: "5678"},
@@ -150,6 +152,7 @@ async def test_config_flow_yaml(hass: HomeAssistant):
     assert result["title"] == "test"
     assert result["data"] == {
         CONF_LOCKS: [LOCK_1_ENTITY_ID],
+        CONF_READ_ONLY: True,
         CONF_SLOTS: {
             1: {CONF_ENABLED: True, CONF_PIN: "1234"},
             2: {CONF_ENABLED: True, CONF_PIN: "5678"},

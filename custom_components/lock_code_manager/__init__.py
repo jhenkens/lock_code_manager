@@ -51,6 +51,7 @@ from .const import (
     ATTR_SETUP_TASKS,
     CONF_LOCKS,
     CONF_NUMBER_OF_USES,
+    CONF_READ_ONLY,
     CONF_SLOTS,
     COORDINATORS,
     DOMAIN,
@@ -612,7 +613,11 @@ async def async_update_listener(hass: HomeAssistant, config_entry: ConfigEntry) 
             )
 
     # Existing entities will listen to updates and act on it
-    new_data = {CONF_LOCKS: new_locks, CONF_SLOTS: new_slots}
+    new_data = {
+        CONF_LOCKS: new_locks,
+        CONF_SLOTS: new_slots,
+        CONF_READ_ONLY: get_entry_data(config_entry, CONF_READ_ONLY, False),
+    }
     _LOGGER.info(
         "%s (%s): Done creating and/or updating entities", entry_id, entry_title
     )

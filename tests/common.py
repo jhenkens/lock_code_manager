@@ -17,6 +17,7 @@ from custom_components.lock_code_manager.const import (
     CONF_CALENDAR,
     CONF_LOCKS,
     CONF_NUMBER_OF_USES,
+    CONF_READ_ONLY,
     CONF_SLOTS,
     DOMAIN,
 )
@@ -29,6 +30,7 @@ LOCK_2_ENTITY_ID = "lock.test_2"
 
 BASE_CONFIG = {
     CONF_LOCKS: [LOCK_1_ENTITY_ID, LOCK_2_ENTITY_ID],
+    CONF_READ_ONLY: False,
     CONF_SLOTS: {
         1: {CONF_NAME: "test1", CONF_PIN: "1234", CONF_ENABLED: True},
         2: {
