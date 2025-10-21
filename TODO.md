@@ -1,50 +1,6 @@
 # Lock Code Manager - TODO
 
 ## Critical Issues (Breaking in 2025.1+)
-### 3. Fix deprecated config_entry assignment in options flow (BREAKING: HA 2025.12)
-**Priority:** MEDIUM
-**Deadline:** Home Assistant 2025.12 (December 2025)
-
-**Issue:**
-```
-WARNING:homeassistant.helpers.frame:Detected that custom integration 'lock_code_manager'
-sets option flow config_entry explicitly, which is deprecated at
-custom_components/lock_code_manager/config_flow.py, line 315: self.config_entry = config_entry
-```
-
-**Description:**
-The options flow handler explicitly assigns `self.config_entry = config_entry`, which is deprecated. Modern config flows should use the built-in mechanism provided by Home Assistant.
-
-**Location:**
-- `custom_components/lock_code_manager/config_flow.py:315`
-
-**Root Cause:**
-The code manually assigns the config entry in the options flow class, likely in `async_step_init()` or similar. This was the old pattern but is no longer needed.
-
-**Fix Strategy:**
-1. Remove explicit `self.config_entry = config_entry` assignment
-2. Use the `OptionsFlowWithConfigEntry` base class if not already using it
-3. Or rely on the config entry being passed via the flow handler automatically
-
-**Code Pattern:**
-```python
-# Old (deprecated):
-class LockCodeManagerOptionsFlow(OptionsFlow):
-    def __init__(self, config_entry: ConfigEntry):
-        self.config_entry = config_entry  # ← Remove this
-
-# New (recommended):
-class LockCodeManagerOptionsFlow(OptionsFlow):
-    # config_entry is automatically available as self.config_entry
-    # No need to assign it manually
-```
-
-**Testing:**
-- Run `pytest -v` and verify warning no longer appears
-- Test options flow in HA UI
-- Verify config entry is accessible throughout the flow
-
----
 
 ## Errors in Test Output
 
