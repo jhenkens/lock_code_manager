@@ -215,6 +215,9 @@ class ZWaveJSLock(BaseLock):
             for code_slot in get_entry_data(entry, CONF_SLOTS, {})
             if self.lock.entity_id not in get_entry_data(entry, CONF_LOCKS, [])
         )
+        _LOGGER.debug(
+            "code_slots for lock %s: %s", self.lock.entity_id, list(code_slots)
+        )
         data: dict[str, int | str] = {}
         code_slot_int = 1
 
@@ -222,14 +225,34 @@ class ZWaveJSLock(BaseLock):
             raise LockDisconnected
 
         try:
+            usercodes = get_usercodes(self.node)
+            _LOGGER.debug(
+                "Raw usercodes fetched from lock %s: %s", self.lock.entity_id, usercodes
+            )
             for slot in get_usercodes(self.node):
+                _LOGGER.debug(
+                    "Processing code slot for lock %s: %s", self.lock.entity_id, slot
+                )
                 code_slot_int = int(slot["code_slot"])
                 code_slot_key = str(code_slot_int)
                 usercode: str = slot["usercode"] or ""
                 in_use: bool | None = slot["in_use"]
+                _LOGGER.debug(
+                    "Lock %s code slot %s: usercode=%s, in_use=%s",
+                    self.lock.entity_id,
+                    code_slot_key,
+                    usercode,
+                    in_use,
+                )
                 # Retrieve code slots that haven't been populated yet
                 if in_use is None and code_slot_key in code_slots:
                     usercode_resp = await get_usercode_from_node(self.node, code_slot_int)
+                    _LOGGER.debug(
+                        "Fetched usercode from node for lock %s code slot %s: %s",
+                        self.lock.entity_id,
+                        code_slot_key,
+                        usercode_resp,
+                    )
                     usercode = slot["usercode"] = usercode_resp["usercode"] or ""
                     in_use = slot["in_use"] = usercode_resp["in_use"]
 
@@ -243,6 +266,11 @@ class ZWaveJSLock(BaseLock):
                     data[code_slot_key] = ""
                 # Special handling if usercode is all *'s
                 elif usercode and len(str(usercode)) * "*" == str(usercode):
+                    _LOGGER.debug(
+                        "Lock %s code slot %s has masked PIN",
+                        self.lock.entity_id,
+                        code_slot_key,
+                    )
                     # Build data from entities
                     config_entry = next(
                         config_entry
@@ -281,6 +309,11 @@ class ZWaveJSLock(BaseLock):
                     else:
                         data[code_slot_key] = ""
                 else:
+                    _LOGGER.debug(
+                        "Lock %s code slot %s has unmasked PIN",
+                        self.lock.entity_id,
+                        code_slot_key,
+                    )
                     if code_slot_key in code_slots:
                         _LOGGER.debug(
                             "Lock %s code slot %s has a PIN",

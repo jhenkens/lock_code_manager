@@ -41,9 +41,7 @@ class LockUsercodeUpdateCoordinator(DataUpdateCoordinator[dict[str, str]]):
             Empty string means slot is empty/cleared.
         """
         try:
-            _LOGGER.debug("Fetching usercodes for lock %s...", self._lock.lock.entity_id)
             raw_data = await self._lock.async_internal_get_usercodes()
-            _LOGGER.debug("Fetched usercodes for lock %s: %s", self._lock.lock.entity_id, raw_data)
             # Ensure all keys and values are strings
             return {str(k): str(v) if v else "" for k, v in raw_data.items()}
         except LockDisconnected as err:
