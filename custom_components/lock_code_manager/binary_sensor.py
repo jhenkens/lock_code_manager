@@ -80,6 +80,11 @@ async def async_setup_entry(
         lock: BaseLock, slot_key: int, ent_reg: er.EntityRegistry
     ):
         """Add code slot sensor entities for slot."""
+        # Check if entity already exists
+        unique_id = f"{config_entry.entry_id}|{slot_key}|{ATTR_IN_SYNC}|{lock.lock.entity_id}"
+        if ent_reg.async_get_entity_id(BINARY_SENSOR_DOMAIN, DOMAIN, unique_id):
+            return  # Entity already exists, skip
+
         coordinator: LockUsercodeUpdateCoordinator = hass.data[DOMAIN][
             config_entry.entry_id
         ][COORDINATORS][lock.lock.entity_id]
