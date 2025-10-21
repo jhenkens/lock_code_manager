@@ -68,42 +68,62 @@ Solution:
 
 ### BUG-002: Duplicate Entity ID Registration
 **Priority:** HIGH
-**Status:** Open
+**Status:** FIXED
 **Discovered:** 2025-10-21
+**Fixed:** 2025-10-21
 
 **Description:**
-Home Assistant reports duplicate unique IDs when trying to register sensor entities, causing sensors to be ignored and not created.
+Home Assistant reports duplicate unique IDs when trying to register sensor entities, causing sensors to be ignored and not created. This occurred both during initial setup and when updating config entry settings (e.g., toggling read_only mode).
 
 **Log Evidence:**
 ```
 ERROR Platform lock_code_manager does not generate unique IDs. ID 01K82F0V7Q5E4V1FNAYNRPYWTB|1|code|lock.back_door already exists - ignoring sensor.back_door_lock_code_slot_1
-ERROR Platform lock_code_manager does not generate unique IDs. ID 01K82F0V7Q5E4V1FNAYNRPYWTB|2|code|lock.front_door already exists - ignoring sensor.front_door_lock_code_slot_2
+ERROR Platform lock_code_manager does not generate unique IDs. ID 01K841CPSS0GPZWRM9A7PKBNMY|3|code|lock.front_door already exists - ignoring sensor.front_door_lock_code_slot_3
 ```
 
 **Occurrences:**
-- Multiple instances for all locks (back_door, front_door, garage_door)
+- Multiple instances for all locks during initial setup
 - Affects slots 1-9
-- Happens shortly after initial setup (11:35:03)
+- Also triggered when changing config entry settings
 
 **Root Cause:**
-The integration appears to be trying to register the same sensor entities twice, possibly due to:
-1. BUG-001 causing platforms to be set up multiple times
-2. Event handlers firing multiple times
-3. Dispatcher signals being sent when entities already exist
+Dispatcher handlers in `sensor.py` and `binary_sensor.py` were not idempotent. When dispatcher signals were sent (either during initial setup due to BUG-001, or during config updates), the handlers would always create new entities without checking if they already existed in the entity registry.
 
 **Impact:**
-- Sensors are not created properly
-- User cannot see lock codes in UI
-- Data not available for automations
+- Duplicate entity registration errors in logs
+- Entities ignored (not created) when they should be
+- User confusion from error messages
+- Related to BUG-001 (platform setup errors causing duplicate dispatches)
 
-**Fix Strategy:**
-1. Fix BUG-001 first (root cause of duplicate registrations)
-2. Add checks before dispatching entity creation signals
-3. Ensure dispatcher handlers are idempotent
+**Fix Applied:**
+Made dispatcher handlers idempotent by checking entity registry before creating entities:
 
-**Related Code:**
-- `custom_components/lock_code_manager/__init__.py` (dispatcher signals)
-- `custom_components/lock_code_manager/sensor.py` (entity registration)
+1. **sensor.py** (lines 36-40): Added check in `add_code_slot_entities()`
+   ```python
+   # Check if entity already exists
+   unique_id = f"{config_entry.entry_id}|{slot_key}|{ATTR_CODE}|{lock.lock.entity_id}"
+   if ent_reg.async_get_entity_id(SENSOR_DOMAIN, DOMAIN, unique_id):
+       return  # Entity already exists, skip
+   ```
+
+2. **binary_sensor.py** (lines 83-86): Added check in `add_code_slot_entities()`
+   ```python
+   # Check if entity already exists
+   unique_id = f"{config_entry.entry_id}|{slot_key}|{ATTR_IN_SYNC}|{lock.lock.entity_id}"
+   if ent_reg.async_get_entity_id(BINARY_SENSOR_DOMAIN, DOMAIN, unique_id):
+       return  # Entity already exists, skip
+   ```
+
+Handlers now check if an entity with the same unique_id exists before creating a new one, preventing duplicates regardless of how many times the dispatcher signal is sent.
+
+**Files Changed:**
+- `custom_components/lock_code_manager/sensor.py:36-40`
+- `custom_components/lock_code_manager/binary_sensor.py:83-86`
+
+**Testing:**
+- All 26 tests passing
+- Config updates (e.g., toggling read_only) no longer cause duplicate entity errors
+- Initial setup creates entities correctly without duplicate registration attempts
 
 ---
 
@@ -225,26 +245,32 @@ The binary sensor's sync detection logic treats Unknown states during startup th
 ## Analysis Summary
 
 **Total Issues Found:** 4
-**Critical:** 2
-**High:** 1
-**Medium:** 1
+**Critical:** 2 (both FIXED ✅)
+**High:** 1 (FIXED ✅)
+**Medium:** 1 (Open)
+
+**Status:**
+- BUG-001: Platform Already Setup ValueError - **FIXED** ✅
+- BUG-002: Duplicate Entity ID Registration - **FIXED** ✅
+- BUG-003: NoEntitySpecifiedError During Binary Sensor Creation - **FIXED** ✅
+- BUG-004: Inappropriate ERROR-Level Logging During Startup - **Open** (partially addressed with INFO logging)
 
 **Common Root Cause:**
-Most issues appear to stem from BUG-001 (platform setup errors), which causes a cascade of problems:
-1. Platforms set up multiple times → ValueError
-2. Dispatcher signals fire multiple times → Duplicate entities (BUG-002)
-3. Binary sensors update before ready → Update errors (BUG-003)
+Most issues stemmed from BUG-001 (platform setup errors), which caused a cascade of problems:
+1. Platforms set up multiple times → ValueError (FIXED)
+2. Dispatcher signals fire multiple times → Duplicate entities (FIXED with idempotent handlers)
+3. Binary sensors update before ready → Update errors (FIXED with entity_added flag)
 
-**Recommended Fix Order:**
-1. Fix BUG-001 first (platform setup)
-2. Verify BUG-002 is resolved (should be fixed by #1)
-3. Fix BUG-003 and BUG-004 together (logging and startup state)
+**Fix Summary:**
+1. ✅ Fixed BUG-001 by properly tracking platform configuration state
+2. ✅ Fixed BUG-002 by making dispatcher handlers idempotent
+3. ✅ Fixed BUG-003 by deferring state writes until entity fully added
+4. 🔄 Partially addressed BUG-004 by changing ERROR to INFO for normal sync operations
 
-**Next Steps:**
-- Investigate why `async_update_listener()` is being called during initial setup
-- Add defensive checks in `configured_platforms` tracking
-- Improve startup state detection in binary sensors
-- Implement proper log level strategy
+**Remaining Work:**
+- Complete BUG-004: Improve startup state detection to reduce INFO logging during initialization
+- Consider adding DEBUG-level logging for initialization events
+- Implement proper log level strategy throughout integration
 
 ---
 
