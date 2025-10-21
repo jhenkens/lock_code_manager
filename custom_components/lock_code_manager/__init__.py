@@ -463,7 +463,7 @@ async def async_update_listener(hass: HomeAssistant, config_entry: ConfigEntry) 
                 ][COORDINATORS][lock_entity_id] = LockUsercodeUpdateCoordinator(
                     hass, lock, config_entry
                 )
-                await coordinator.async_config_entry_first_refresh()
+                await coordinator.async_request_refresh()
             for slot_num in new_slots:
                 _LOGGER.debug(
                     "%s (%s): Adding lock %s slot %s sensor and event entity",
