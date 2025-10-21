@@ -6,8 +6,9 @@ This file tracks bugs found in Home Assistant log analysis. Issues are prioritiz
 
 ### BUG-001: Platform Already Setup ValueError
 **Priority:** HIGH
-**Status:** Open
+**Status:** FIXED
 **Discovered:** 2025-10-21
+**Fixed:** 2025-10-21
 
 **Description:**
 Multiple `ValueError` exceptions when setting up platforms during integration load. The integration attempts to set up the same platforms (text, switch) multiple times for the same config entry, causing failures.
@@ -45,15 +46,23 @@ This indicates `async_update_listener()` is being called **during** the initial 
 - Log spam with error messages
 - Triggers cascade of other issues (BUG-002)
 
-**Fix Strategy:**
-1. Investigate why `async_update_listener()` is called during initial setup
-2. Ensure platforms are only forwarded when actually new (not already in `configured_platforms`)
-3. Consider only setting up platforms in `async_setup_entry()`, not in update listener
-4. Or: Only call update listener after initial setup is complete
+**Fix Applied:**
+Changed initialization of `ATTR_CONFIGURED_PLATFORMS` from `set(PLATFORMS)` to an empty `set()`, and explicitly mark platforms as configured after they're forwarded.
 
-**Related Code:**
-- `custom_components/lock_code_manager/__init__.py:370-383` (async_update_listener)
-- `custom_components/lock_code_manager/__init__.py:228` (async_setup_entry - initial platform setup)
+The bug was caused by pre-populating `configured_platforms` with all core platforms before they were actually set up. This caused the update listener logic to incorrectly think platforms were already configured when they weren't, leading to duplicate setup attempts.
+
+Solution:
+1. Initialize `ATTR_CONFIGURED_PLATFORMS` as empty set (line 218)
+2. Forward core platforms in `async_setup_entry()` (line 231)
+3. Mark them as configured immediately after forwarding (line 233)
+4. Update listener now correctly tracks which platforms are actually configured
+
+**Files Changed:**
+- `custom_components/lock_code_manager/__init__.py:218,231-233`
+
+**Testing:**
+- All 26 tests passing
+- No more "platform already setup" errors in test output
 
 ---
 

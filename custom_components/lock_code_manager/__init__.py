@@ -215,7 +215,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     hass.data[DOMAIN][entry_id] = {
         CONF_LOCKS: {},
         COORDINATORS: {},
-        ATTR_CONFIGURED_PLATFORMS: set(PLATFORMS),  # Track which platforms are configured
+        ATTR_CONFIGURED_PLATFORMS: set(),  # Track which platforms are configured
     }
 
     dev_reg = dr.async_get(hass)
@@ -227,7 +227,10 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         serial_number=entry_id,
     )
 
+    # Set up core platforms that are always needed
     await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
+    # Mark them as configured
+    hass.data[DOMAIN][entry_id][ATTR_CONFIGURED_PLATFORMS].update(PLATFORMS)
 
     if hass.state == CoreState.running:
         _setup_entry_after_start(hass, config_entry)
