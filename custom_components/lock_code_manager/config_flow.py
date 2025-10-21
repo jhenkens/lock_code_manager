@@ -29,6 +29,7 @@ from .const import (
     CONF_LOCKS,
     CONF_NUM_SLOTS,
     CONF_NUMBER_OF_USES,
+    CONF_READ_ONLY,
     CONF_SLOTS,
     CONF_START_SLOT,
     DEFAULT_NUM_SLOTS,
@@ -152,6 +153,7 @@ class LockCodeManagerFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 {
                     vol.Required(CONF_NAME): cv.string,
                     vol.Required(CONF_LOCKS): LOCK_ENTITY_SELECTOR,
+                    vol.Required(CONF_READ_ONLY, default=True): cv.boolean,
                 }
             ),
             last_step=False,
@@ -342,7 +344,8 @@ class LockCodeManagerOptionsFlow(config_entries.OptionsFlow):
 
         def _get_default(key: str) -> Any:
             """Get default value."""
-            return user_input.get(key, get_entry_data(self.config_entry, key, {}))
+            default_values = {CONF_READ_ONLY: True}
+            return user_input.get(key, get_entry_data(self.config_entry, key, default_values.get(key, {})))
 
         return self.async_show_form(
             step_id="init",
@@ -354,6 +357,9 @@ class LockCodeManagerOptionsFlow(config_entries.OptionsFlow):
                     vol.Required(
                         CONF_SLOTS, default=_get_default(CONF_SLOTS)
                     ): SLOTS_YAML_SELECTOR,
+                    vol.Required(
+                        CONF_READ_ONLY, default=_get_default(CONF_READ_ONLY)
+                    ): cv.boolean,
                 }
             ),
             errors=errors,

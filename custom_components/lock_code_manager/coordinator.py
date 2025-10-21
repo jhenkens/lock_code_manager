@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -17,7 +18,9 @@ _LOGGER = logging.getLogger(__name__)
 class LockUsercodeUpdateCoordinator(DataUpdateCoordinator[dict[int, int | str]]):
     """Class to manage usercode updates."""
 
-    def __init__(self, hass: HomeAssistant, lock: BaseLock) -> None:
+    def __init__(
+        self, hass: HomeAssistant, lock: BaseLock, config_entry: ConfigEntry
+    ) -> None:
         """Initialize the usercode update coordinator."""
         self._lock = lock
         super().__init__(
@@ -26,6 +29,7 @@ class LockUsercodeUpdateCoordinator(DataUpdateCoordinator[dict[int, int | str]])
             name=f"{DOMAIN} {lock.lock.entity_id}",
             update_method=self.async_get_usercodes,
             update_interval=lock.usercode_scan_interval,
+            config_entry=config_entry,
         )
         self.data: dict[int, int | str] = {}
 

@@ -45,6 +45,7 @@ CONF_LOCKS = "locks"
 CONF_SLOTS = "slots"
 CONF_NUM_SLOTS = "num_slots"
 CONF_START_SLOT = "start_slot"
+CONF_READ_ONLY = "read_only"
 
 # Additional entity keys
 ATTR_ACTIVE = "active"

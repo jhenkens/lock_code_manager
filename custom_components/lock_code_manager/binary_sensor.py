@@ -42,6 +42,7 @@ from .const import (
     ATTR_IN_SYNC,
     CONF_CALENDAR,
     CONF_NUMBER_OF_USES,
+    CONF_READ_ONLY,
     COORDINATORS,
     DOMAIN,
     EVENT_PIN_USED,
@@ -228,19 +229,71 @@ class LockCodeManagerCodeSlotInSyncEntity(
 
     async def async_update(self) -> None:
         """Update entity."""
-        if (
-            self._lock.locked()
-            or self.is_on
-            or not (state := self.hass.states.get(self.lock.lock.entity_id))
-            or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN)
-            or not self.coordinator.last_update_success
-        ):
+        if self._lock.locked():
+            _LOGGER.debug(
+                "Skipping update for %s slot %s: lock is already busy",
+                self.lock.lock.entity_id,
+                self.slot_num,
+            )
+            return
+        
+        if self.is_on:
+            _LOGGER.debug(
+                "Skipping update for %s slot %s: already in sync",
+                self.lock.lock.entity_id,
+                self.slot_num,
+            )
+            return
+            
+        if not (state := self.hass.states.get(self.lock.lock.entity_id)):
+            _LOGGER.debug(
+                "Skipping update for %s slot %s: lock entity state not available",
+                self.lock.lock.entity_id,
+                self.slot_num,
+            )
+            return
+            
+        if state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            _LOGGER.debug(
+                "Skipping update for %s slot %s: lock state is %s",
+                self.lock.lock.entity_id,
+                self.slot_num,
+                state.state,
+            )
+            return
+            
+        if not self.coordinator.last_update_success:
+            _LOGGER.debug(
+                "Skipping update for %s slot %s: coordinator last update failed",
+                self.lock.lock.entity_id,
+                self.slot_num,
+            )
             return
 
+        # Get current states for logging
+        pin_entity_id = self._entity_id_map.get(CONF_PIN)
+        name_entity_id = self._entity_id_map.get(CONF_NAME)
+        active_entity_id = self._entity_id_map.get(ATTR_ACTIVE)
+        code_entity_id = self._entity_id_map.get(ATTR_CODE)
+        
+        pin_state = self.hass.states.get(pin_entity_id).state if pin_entity_id else "Unknown"
+        name_state = self.hass.states.get(name_entity_id).state if name_entity_id else "Unknown"
+        active_state = self.hass.states.get(active_entity_id).state if active_entity_id else "Unknown"
+        code_state = self.hass.states.get(code_entity_id).state if code_entity_id else "Unknown"
+        
+        coordinator_data = self.coordinator.data.get(int(self.slot_num), "Not found")
+
         _LOGGER.error(
-            "Updating %s code slot %s because it is out of sync",
+            "Updating %s code slot %s because it is out of sync. Current states: "
+            "pin=%s, name=%s, active=%s, code_on_lock=%s, coordinator_data=%s, is_on=%s",
             self.lock.lock.entity_id,
             self.slot_num,
+            pin_state,
+            name_state,
+            active_state,
+            code_state,
+            coordinator_data,
+            self.is_on,
         )
         await self._async_update_state()
 
@@ -249,6 +302,12 @@ class LockCodeManagerCodeSlotInSyncEntity(
         if (state := self.hass.states.get(self._entity_id_map[key])) is None:
             return None
         return state.state
+
+    @property
+    def _is_read_only_mode(self) -> bool:
+        """Check if read-only mode is enabled."""
+        from .data import get_entry_data
+        return get_entry_data(self.config_entry, CONF_READ_ONLY, True)
 
     async def _async_update_state(
         self, event: Event[EventStateChangedData] | None = None
@@ -305,16 +364,30 @@ class LockCodeManagerCodeSlotInSyncEntity(
                 ) is not None and pin_state != self._get_entity_state(ATTR_CODE):
                     self._attr_is_on = False
                     self.async_write_ha_state()
-                    await self.lock.async_internal_set_usercode(
-                        int(self.slot_num), pin_state, self._get_entity_state(CONF_NAME)
-                    )
-                    _LOGGER.info(
-                        "%s (%s): Set usercode for %s slot %s",
-                        self.config_entry.entry_id,
-                        self.config_entry.title,
-                        self.lock.lock.entity_id,
-                        self.slot_num,
-                    )
+                    
+                    if self._is_read_only_mode:
+                        _LOGGER.warning(
+                            "%s (%s): Would set usercode for %s slot %s to '%s' (name: '%s'), but read-only mode is enabled",
+                            self.config_entry.entry_id,
+                            self.config_entry.title,
+                            self.lock.lock.entity_id,
+                            self.slot_num,
+                            pin_state,
+                            self._get_entity_state(CONF_NAME),
+                        )
+                    else:
+                        await self.lock.async_internal_set_usercode(
+                            int(self.slot_num), pin_state, self._get_entity_state(CONF_NAME)
+                        )
+                        _LOGGER.info(
+                            "%s (%s): Set usercode for %s slot %s",
+                            self.config_entry.entry_id,
+                            self.config_entry.title,
+                            self.lock.lock.entity_id,
+                            self.slot_num,
+                        )
+                    # Wait for lock to process the change before refreshing
+                    await asyncio.sleep(1)
                 elif self._attr_is_on:
                     return
                 else:
@@ -323,14 +396,26 @@ class LockCodeManagerCodeSlotInSyncEntity(
                 if self._get_entity_state(ATTR_CODE) != "":
                     self._attr_is_on = False
                     self.async_write_ha_state()
-                    await self.lock.async_internal_clear_usercode(int(self.slot_num))
-                    _LOGGER.info(
-                        "%s (%s): Cleared usercode for lock %s slot %s",
-                        self.config_entry.entry_id,
-                        self.config_entry.title,
-                        self.lock.lock.entity_id,
-                        self.slot_num,
-                    )
+                    
+                    if self._is_read_only_mode:
+                        _LOGGER.warning(
+                            "%s (%s): Would clear usercode for lock %s slot %s, but read-only mode is enabled",
+                            self.config_entry.entry_id,
+                            self.config_entry.title,
+                            self.lock.lock.entity_id,
+                            self.slot_num,
+                        )
+                    else:
+                        await self.lock.async_internal_clear_usercode(int(self.slot_num))
+                        _LOGGER.info(
+                            "%s (%s): Cleared usercode for lock %s slot %s",
+                            self.config_entry.entry_id,
+                            self.config_entry.title,
+                            self.lock.lock.entity_id,
+                            self.slot_num,
+                        )
+                    # Wait for lock to process the change before refreshing
+                    await asyncio.sleep(1)
                 elif self._attr_is_on:
                     return
                 else:

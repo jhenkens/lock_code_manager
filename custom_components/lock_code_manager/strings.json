@@ -47,9 +47,10 @@
       "user": {
         "data": {
           "locks": "Locks",
-          "name": "Name"
+          "name": "Name",
+          "read_only": "Read-only mode (development)"
         },
-        "description": "Give this configuration a unique name (e.g. `House Locks`) and select the locks you would like to manage with it.",
+        "description": "Give this configuration a unique name (e.g. `House Locks`) and select the locks you would like to manage with it. Read-only mode prevents the integration from sending commands to the locks (useful for development).",
         "title": "Lock Code Manager"
       },
       "yaml": {
@@ -117,9 +118,10 @@
       "init": {
         "data": {
           "locks": "Locks",
+          "read_only": "Read-only mode (development)",
           "slots": "Slots YAML"
         },
-        "description": "Update the locks that are associated with this config entry and/or the slot configurations.",
+        "description": "Update the locks that are associated with this config entry, the slot configurations, and/or read-only mode setting. Read-only mode prevents the integration from sending commands to the locks (useful for development).",
         "title": "Lock Code Manager"
       }
     }
