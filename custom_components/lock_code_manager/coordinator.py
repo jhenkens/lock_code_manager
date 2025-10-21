@@ -42,6 +42,7 @@ class LockUsercodeUpdateCoordinator(DataUpdateCoordinator[dict[str, str]]):
         """
         try:
             raw_data = await self._lock.async_internal_get_usercodes()
+            logging.debug("Fetched usercodes for lock %s: %s", self._lock.lock.entity_id, raw_data)
             # Ensure all keys and values are strings
             return {str(k): str(v) if v else "" for k, v in raw_data.items()}
         except LockDisconnected as err:
