@@ -87,41 +87,55 @@ ERROR Platform lock_code_manager does not generate unique IDs. ID 01K841CPSS0GPZ
 - Also triggered when changing config entry settings
 
 **Root Cause:**
-Initially thought to be due to non-idempotent dispatcher handlers, but the real root cause was **BUG-001** (platform setup errors) causing dispatcher signals to fire multiple times during initial setup.
+The **actual root cause** was duplicate dispatcher signals being sent in `async_update_listener()`:
 
-After fixing BUG-001, realized we were over-engineering the solution by manually tracking entities. Home Assistant's `entity_platform.py` **already has built-in duplicate prevention** based on `unique_id`.
+In the `slots_to_add` loop (`__init__.py` lines 499-558), we were sending `add_lock_slot` dispatcher signals **twice** for the same lock/slot combination:
+1. Lines 509-521: First loop through existing locks to add slot sensors ✅
+2. Lines 533-544: Add PIN active and other entities ✅
+3. Lines 546-558: **Duplicate loop** through existing locks - SENT SAME SIGNALS AGAIN! ❌
+
+This caused dispatcher handlers to be called twice with the same parameters, attempting to create the same entities twice.
+
+**Why it appeared during reload:**
+- Initial setup from BUG-001 also triggered this, but was masked by platform setup errors
+- During integration reload, dispatcher signals fire and queue up quickly
+- If both signals are processed before entities are registered, both attempts to create entities
+- Home Assistant's duplicate prevention works, but still logs errors
 
 **Impact:**
-- Duplicate entity registration errors in logs during initial setup (caused by BUG-001)
-- User confusion from error messages
-- Directly caused by BUG-001 platform setup issues
+- Duplicate entity registration errors during integration reload
+- Errors during initial setup when combined with BUG-001
+- Log spam and user confusion
 
 **Fix Applied:**
-**FINAL FIX (correct approach):** Removed all manual duplicate tracking and let Home Assistant's built-in duplicate prevention handle it.
+Removed the duplicate dispatcher send loop (lines 546-558 in `__init__.py`).
 
-Home Assistant's entity platform automatically:
-1. Checks if an entity with the same `unique_id` already exists in the entity registry
-2. If it exists, calls `entity.add_to_platform_abort()` and skips adding the duplicate
-3. Logs appropriate error messages for debugging
+The comment on line 496 explains the intent:
+> "For each new slot, add standard entities and configuration entities. We also add slot sensors for existing locks only since new locks were already set up above."
 
-**Key Insight:** When entities have properly set `unique_id` attributes, `async_add_entities()` can be safely called multiple times. The platform handles deduplication automatically.
+The second loop (lines 546-558) was redundant - it repeated what the first loop (lines 509-521) already did.
 
-**Initial (incorrect) approach:**
-We initially tried to manually track entities using `entities_added_tracker` set, checking before calling `async_add_entities()`. This caused "Entity not found" errors after restart because:
-- Entity registry persists across restarts
-- Our manual check would see entities in registry and skip creation
-- But entities weren't actually loaded in current session
+**Investigation Journey:**
+1. Initially thought dispatcher handlers weren't idempotent → tried manual entity tracking
+2. Manual tracking caused "Entity not found" after restart (entity registry persistence issue)
+3. Learned Home Assistant already handles duplicate prevention via `unique_id`
+4. User reported: "if home assistant is already started, and then I reload the integration, I get the duplicate errors"
+5. Traced through code and found we were sending dispatcher signals twice
+6. Removed duplicate loop → problem solved
+
+**Key Lessons:**
+- Home Assistant's `async_add_entities()` DOES prevent duplicates when entities have `unique_id`
+- But we still shouldn't send duplicate dispatcher signals - it causes error log spam
+- Always trace through actual code execution rather than assuming the framework is wrong
+- The codebase organization made this bug hard to spot - clusterfuck confirmed 😅
 
 **Files Changed:**
-- `custom_components/lock_code_manager/sensor.py:36-37` - Added explanatory comment
-- `custom_components/lock_code_manager/binary_sensor.py:83-84` - Added explanatory comment
-- Removed manual tracking code entirely
+- `custom_components/lock_code_manager/__init__.py:546-558` - Removed duplicate loop
 
 **Testing:**
 - All 26 tests passing
-- Entities created correctly on initial setup
-- Entities load correctly after Home Assistant restart
-- Config updates work without errors
+- Integration reload works without duplicate entity errors
+- Entities created correctly on initial setup and reload
 
 ---
 
