@@ -144,23 +144,26 @@ class ZWaveJSLock(BaseLock):
 
     async def async_is_connection_up(self) -> bool:
         """Return whether connection to lock is up."""
-        zwave_data = self.hass.data.get(ZWAVE_JS_DOMAIN)
-
-        if not zwave_data:
+        # Check if the lock entity exists and is available
+        lock_state = self.hass.states.get(self.lock.entity_id)
+        if not lock_state or lock_state.state == "unavailable":
             return False
-
-        client_entry = getattr(zwave_data, "_client_driver_map", {}).get(
-            self.lock_config_entry.entry_id
-        )
-
-        if client_entry is None or client_entry.client is None:
+        
+        # Check if Z-Wave JS config entry is loaded
+        if self.lock_config_entry.state != ConfigEntryState.LOADED:
             return False
-
-        return (
-            self.lock_config_entry.state == ConfigEntryState.LOADED
-            and client_entry.client.connected
-            and client_entry.client.driver is not None
-        )
+        
+        # Try to get the node - if this fails, the connection is down
+        try:
+            # Check if node has a connected client with a driver
+            return (
+                self.node is not None
+                and self.node.client is not None
+                and self.node.client.connected
+                and self.node.client.driver is not None
+            )
+        except Exception:
+            return False
 
     async def async_hard_refresh_codes(self) -> None:
         """

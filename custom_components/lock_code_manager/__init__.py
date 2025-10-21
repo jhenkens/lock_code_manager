@@ -289,6 +289,17 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
     entry_id = config_entry.entry_id
     hass_data = hass.data[DOMAIN]
 
+    # Cancel any pending setup tasks
+    setup_tasks = hass_data.get(entry_id, {}).get(ATTR_SETUP_TASKS, {})
+    for task in setup_tasks.values():
+        if not task.done():
+            _LOGGER.debug("Cancelling pending setup task during unload")
+            task.cancel()
+    
+    # Wait for tasks to complete cancellation
+    if setup_tasks:
+        await asyncio.gather(*setup_tasks.values(), return_exceptions=True)
+
     unload_ok = await hass.config_entries.async_unload_platforms(
         config_entry,
         {
@@ -336,6 +347,11 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
 
 
 async def async_update_listener(hass: HomeAssistant, config_entry: ConfigEntry) -> None:
+    """Update listener."""
+    # No need to update if there are no options because that only happens at the end
+    # of this function
+    if not config_entry.options:
+        return
     """Update listener."""
     # No need to update if there are no options because that only happens at the end
     # of this function
@@ -442,22 +458,8 @@ async def async_update_listener(hass: HomeAssistant, config_entry: ConfigEntry) 
                 )
                 await lock.async_setup()
 
-            # Make sure lock is up before we proceed
-            timeout = 1
-
-            while not await lock.async_internal_is_connection_up():
-                _LOGGER.debug(
-                    (
-                        "%s (%s): Lock %s is not connected to Home Assistant yet, waiting %s "
-                        "seconds before retrying"
-                    ),
-                    entry_id,
-                    entry_title,
-                    lock.lock.entity_id,
-                    timeout,
-                )
-                await asyncio.sleep(timeout)
-                timeout = min(timeout * 2, 180)
+            # The coordinator will handle lock availability - no need to block here
+            # Entities will show as unavailable if lock is disconnected
 
             if lock_entity_id in hass_data[COORDINATORS]:
                 _LOGGER.debug(
