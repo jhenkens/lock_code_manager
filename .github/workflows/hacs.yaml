@@ -11,9 +11,11 @@ jobs:
   validate_hacs:
     name: "HACS Validation"
     runs-on: ubuntu-latest
+    if: github.repository == 'raman325/lock_code_manager'
     steps:
       - uses: "actions/checkout@v5"
       - name: HACS Action
         uses: "hacs/action@main"
         with:
           category: "integration"
+          ignore: "topics,issues"
