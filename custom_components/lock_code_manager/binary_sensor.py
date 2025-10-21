@@ -279,7 +279,7 @@ class LockCodeManagerCodeSlotInSyncEntity(
         
         coordinator_data = self.coordinator.data.get(str(self.slot_key), "Not found")
 
-        _LOGGER.error(
+        _LOGGER.info(
             "Updating %s code slot %s because it is out of sync. Current states: "
             "pin=%s, name=%s, active=%s, code_on_lock=%s, coordinator_data=%s, is_on=%s",
             self.lock.lock.entity_id,
