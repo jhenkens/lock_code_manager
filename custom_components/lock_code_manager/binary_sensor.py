@@ -275,32 +275,6 @@ class LockCodeManagerCodeSlotInSyncEntity(
                 self.slot_key,
             )
             return
-
-        # Get current states for logging
-        pin_entity_id = self._entity_id_map.get(CONF_PIN)
-        name_entity_id = self._entity_id_map.get(CONF_NAME)
-        active_entity_id = self._entity_id_map.get(ATTR_ACTIVE)
-        code_entity_id = self._entity_id_map.get(ATTR_CODE)
-        
-        pin_state = self.hass.states.get(pin_entity_id).state if pin_entity_id else "Unknown"
-        name_state = self.hass.states.get(name_entity_id).state if name_entity_id else "Unknown"
-        active_state = self.hass.states.get(active_entity_id).state if active_entity_id else "Unknown"
-        code_state = self.hass.states.get(code_entity_id).state if code_entity_id else "Unknown"
-        
-        coordinator_data = self.coordinator.data.get(str(self.slot_key), "Not found")
-
-        _LOGGER.info(
-            "Updating %s code slot %s because it is out of sync. Current states: "
-            "pin=%s, name=%s, active=%s, code_on_lock=%s, coordinator_data=%s, is_on=%s",
-            self.lock.lock.entity_id,
-            self.slot_key,
-            pin_state,
-            name_state,
-            active_state,
-            code_state,
-            coordinator_data,
-            self.is_on,
-        )
         await self._async_update_state()
 
     def _get_entity_state(self, key: str) -> str | None:
