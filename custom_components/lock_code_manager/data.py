@@ -17,6 +17,6 @@ def get_entry_data(config_entry: ConfigEntry, key: str, default: Any = {}) -> An
     return config_entry.data.get(key, config_entry.options.get(key, default))
 
 
-def get_slot_data(config_entry, slot_num: int) -> dict[str, Any]:
+def get_slot_data(config_entry, slot_key: int) -> dict[str, Any]:
     """Get data for slot."""
-    return get_entry_data(config_entry, CONF_SLOTS, {}).get(slot_num, {})
+    return get_entry_data(config_entry, CONF_SLOTS, {}).get(slot_key, {})

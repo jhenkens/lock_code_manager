@@ -218,7 +218,7 @@ class LockCodeManagerFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="code_slot",
             data_schema=UI_CODE_SLOT_SCHEMA,
             errors=errors,
-            description_placeholders={"slot_num": self.slots_to_configure[0]},
+            description_placeholders={"slot_key": self.slots_to_configure[0]},
             last_step=len(self.slots_to_configure) == 1,
         )
 

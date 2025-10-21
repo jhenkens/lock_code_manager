@@ -27,11 +27,11 @@ async def async_setup_entry(
     """Set up config entry."""
 
     @callback
-    def add_standard_text_entities(slot_num: int, ent_reg: er.EntityRegistry) -> None:
+    def add_standard_text_entities(slot_key: int, ent_reg: er.EntityRegistry) -> None:
         """Add standard text entities for slot."""
         async_add_entities(
             [
-                LockCodeManagerText(hass, ent_reg, config_entry, slot_num, *props)
+                LockCodeManagerText(hass, ent_reg, config_entry, slot_key, *props)
                 for props in ((CONF_NAME, TextMode.TEXT), (CONF_PIN, TextMode.PASSWORD))
             ],
             True,
@@ -58,13 +58,13 @@ class LockCodeManagerText(BaseLockCodeManagerEntity, TextEntity):
         hass: HomeAssistant,
         ent_reg: er.EntityRegistry,
         config_entry: ConfigEntry,
-        slot_num: int,
+        slot_key: int,
         key: str,
         text_mode: TextMode,
     ) -> None:
         """Initialize Text entity."""
         BaseLockCodeManagerEntity.__init__(
-            self, hass, ent_reg, config_entry, slot_num, key
+            self, hass, ent_reg, config_entry, slot_key, key
         )
         self._attr_mode = text_mode
 
@@ -89,11 +89,11 @@ class LockCodeManagerText(BaseLockCodeManagerEntity, TextEntity):
             async_create(
                 self.hass,
                 (
-                    f"PIN must be a valid value because slot {self.slot_num} is "
+                    f"PIN must be a valid value because slot {self.slot_key} is "
                     f"enabled on the lock configuration {self.config_entry.title}."
                 ),
                 "Problem with Lock Code Manager",
-                f"{DOMAIN}_{self.config_entry.entry_id}_{self.slot_num}_pin_required",
+                f"{DOMAIN}_{self.config_entry.entry_id}_{self.slot_key}_pin_required",
             )
             return
 

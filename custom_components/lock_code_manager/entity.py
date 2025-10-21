@@ -47,7 +47,7 @@ class BaseLockCodeManagerEntity(Entity):
         hass: HomeAssistant,
         ent_reg: er.EntityRegistry,
         config_entry: ConfigEntry,
-        slot_num: int,
+        slot_key: int,
         key: str,
     ) -> None:
         """Initialize base entity."""
@@ -57,45 +57,45 @@ class BaseLockCodeManagerEntity(Entity):
         self.locks: list[BaseLock] = list(
             hass.data[DOMAIN][config_entry.entry_id][CONF_LOCKS].values()
         )
-        self.slot_num = slot_num
+        self.slot_key = slot_key
         self.key = key
         self.ent_reg = ent_reg
 
         self._uid_cache: dict[str, str] = {}
 
         self._attr_translation_key = key
-        self._attr_translation_placeholders = {"slot_num": slot_num}
+        self._attr_translation_placeholders = {"slot_key": slot_key}
 
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{self.entry_id}|{slot_num}")},
-            name=f"{config_entry.title} Code slot {slot_num}",
+            identifiers={(DOMAIN, f"{self.entry_id}|{slot_key}")},
+            name=f"{config_entry.title} Code slot {slot_key}",
             manufacturer="Lock Code Manager",
             model="Code Slot",
             via_device=(DOMAIN, self.entry_id),
         )
 
-        self._attr_unique_id = f"{self.base_unique_id}|{slot_num}|{key}"
+        self._attr_unique_id = f"{self.base_unique_id}|{slot_key}|{key}"
         self._attr_extra_state_attributes: dict[str, int | list[str]] = {
-            ATTR_CODE_SLOT: int(slot_num)
+            ATTR_CODE_SLOT: int(slot_key)
         }
 
     @final
     @property
     def _state(self) -> Any:
         """Return state of entity."""
-        return get_slot_data(self.config_entry, self.slot_num).get(self.key)
+        return get_slot_data(self.config_entry, self.slot_key).get(self.key)
 
     @final
     @property
     def _calendar_entity_id(self) -> str | None:
         """Return calendar entity ID for this slot."""
-        return get_slot_data(self.config_entry, self.slot_num).get(CONF_CALENDAR)
+        return get_slot_data(self.config_entry, self.slot_key).get(CONF_CALENDAR)
 
     @final
     def _get_uid(self, key: str) -> str:
         """Get and cache unique id for a given key."""
         if key not in self._uid_cache:
-            self._uid_cache[key] = f"{self.base_unique_id}|{self.slot_num}|{key}"
+            self._uid_cache[key] = f"{self.base_unique_id}|{self.slot_key}|{key}"
         return self._uid_cache[key]
 
     @callback
@@ -110,7 +110,7 @@ class BaseLockCodeManagerEntity(Entity):
             value,
         )
         data = copy.deepcopy(dict(self.config_entry.data))
-        data[CONF_SLOTS][self.slot_num][self.key] = value
+        data[CONF_SLOTS][self.slot_key][self.key] = value
         self.hass.config_entries.async_update_entry(self.config_entry, data=data)
         self.async_write_ha_state()
 
@@ -170,14 +170,14 @@ class BaseLockCodeManagerEntity(Entity):
         self.async_on_remove(
             async_dispatcher_connect(
                 self.hass,
-                f"{DOMAIN}_{entry.entry_id}_remove_{self.slot_num}_{self.key}",
+                f"{DOMAIN}_{entry.entry_id}_remove_{self.slot_key}_{self.key}",
                 self._internal_async_remove,
             )
         )
         self.async_on_remove(
             async_dispatcher_connect(
                 self.hass,
-                f"{DOMAIN}_{entry.entry_id}_remove_{self.slot_num}",
+                f"{DOMAIN}_{entry.entry_id}_remove_{self.slot_key}",
                 self._internal_async_remove,
             )
         )
@@ -203,7 +203,7 @@ class BaseLockCodeManagerEntity(Entity):
             any(
                 event_data[ATTR_ENTITY_ID] == lock.lock.entity_id for lock in self.locks
             )
-            and event_data[ATTR_CODE_SLOT] == int(self.slot_num)
+            and event_data[ATTR_CODE_SLOT] == int(self.slot_key)
             and event_data[ATTR_TO] == LockState.UNLOCKED
         )
 
@@ -274,12 +274,12 @@ class BaseLockCodeManagerCodeSlotPerLockEntity(BaseLockCodeManagerEntity):
         ent_reg: er.EntityRegistry,
         config_entry: ConfigEntry,
         lock: BaseLock,
-        slot_num: int,
+        slot_key: int,
         key: str,
     ) -> None:
         """Initialize entity."""
         BaseLockCodeManagerEntity.__init__(
-            self, hass, ent_reg, config_entry, slot_num, key
+            self, hass, ent_reg, config_entry, slot_key, key
         )
         self.lock = lock
         if lock.device_entry:
@@ -289,7 +289,7 @@ class BaseLockCodeManagerCodeSlotPerLockEntity(BaseLockCodeManagerEntity):
             )
 
         self._attr_unique_id = (
-            f"{self.base_unique_id}|{slot_num}|{self.key}|{lock.lock.entity_id}"
+            f"{self.base_unique_id}|{slot_key}|{self.key}|{lock.lock.entity_id}"
         )
 
     @callback

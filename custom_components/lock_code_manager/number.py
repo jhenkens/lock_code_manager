@@ -25,12 +25,12 @@ async def async_setup_entry(
     """Set up config entry."""
 
     @callback
-    def add_number_entities(slot_num: int, ent_reg: er.EntityRegistry) -> None:
+    def add_number_entities(slot_key: int, ent_reg: er.EntityRegistry) -> None:
         """Add number entities for slot."""
         async_add_entities(
             [
                 LockCodeManagerNumber(
-                    hass, ent_reg, config_entry, slot_num, CONF_NUMBER_OF_USES
+                    hass, ent_reg, config_entry, slot_key, CONF_NUMBER_OF_USES
                 )
             ],
             True,

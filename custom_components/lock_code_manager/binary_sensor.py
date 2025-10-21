@@ -64,12 +64,12 @@ async def async_setup_entry(
     """Set up config entry."""
 
     @callback
-    def add_pin_active_entity(slot_num: int, ent_reg: er.EntityRegistry) -> None:
+    def add_pin_active_entity(slot_key: int, ent_reg: er.EntityRegistry) -> None:
         """Add active binary sensor entities for slot."""
         async_add_entities(
             [
                 LockCodeManagerActiveEntity(
-                    hass, ent_reg, config_entry, slot_num, ATTR_ACTIVE
+                    hass, ent_reg, config_entry, slot_key, ATTR_ACTIVE
                 )
             ],
             True,
@@ -77,7 +77,7 @@ async def async_setup_entry(
 
     @callback
     def add_code_slot_entities(
-        lock: BaseLock, slot_num: int, ent_reg: er.EntityRegistry
+        lock: BaseLock, slot_key: int, ent_reg: er.EntityRegistry
     ):
         """Add code slot sensor entities for slot."""
         coordinator: LockUsercodeUpdateCoordinator = hass.data[DOMAIN][
@@ -86,7 +86,7 @@ async def async_setup_entry(
         async_add_entities(
             [
                 LockCodeManagerCodeSlotInSyncEntity(
-                    hass, ent_reg, config_entry, coordinator, lock, slot_num
+                    hass, ent_reg, config_entry, coordinator, lock, slot_key
                 )
             ],
             True,
@@ -123,7 +123,7 @@ class LockCodeManagerActiveEntity(BaseLockCodeManagerEntity, BinarySensorEntity)
         )
 
         states: dict[str, bool] = {}
-        for key, state in get_slot_data(self.config_entry, self.slot_num).items():
+        for key, state in get_slot_data(self.config_entry, self.slot_key).items():
             if key in (EVENT_PIN_USED, CONF_NAME, CONF_PIN, ATTR_IN_SYNC):
                 continue
             if key == CONF_CALENDAR and (hass_state := self.hass.states.get(state)):
@@ -198,11 +198,11 @@ class LockCodeManagerCodeSlotInSyncEntity(
         config_entry: ConfigEntry,
         coordinator: LockUsercodeUpdateCoordinator,
         lock: BaseLock,
-        slot_num: int,
+        slot_key: int,
     ) -> None:
         """Initialize entity."""
         BaseLockCodeManagerCodeSlotPerLockEntity.__init__(
-            self, hass, ent_reg, config_entry, lock, slot_num, ATTR_IN_SYNC
+            self, hass, ent_reg, config_entry, lock, slot_key, ATTR_IN_SYNC
         )
         CoordinatorEntity.__init__(self, coordinator)
         self._entity_id_map: dict[str, str] = {}
@@ -214,6 +214,7 @@ class LockCodeManagerCodeSlotInSyncEntity(
             f"{self._get_uid(ATTR_CODE)}|{lock_entity_id}"
         )
         self._lock = asyncio.Lock()
+        self._entity_added = False  # Track if entity has been added to hass
 
     @property
     def should_poll(self) -> bool:
@@ -224,7 +225,7 @@ class LockCodeManagerCodeSlotInSyncEntity(
     def available(self) -> bool:
         """Return whether binary sensor is available or not."""
         return BaseLockCodeManagerCodeSlotPerLockEntity._is_available(self) and (
-            int(self.slot_num) in self.coordinator.data
+            str(self.slot_key) in self.coordinator.data
         )
 
     async def async_update(self) -> None:
@@ -233,23 +234,18 @@ class LockCodeManagerCodeSlotInSyncEntity(
             _LOGGER.debug(
                 "Skipping update for %s slot %s: lock is already busy",
                 self.lock.lock.entity_id,
-                self.slot_num,
+                self.slot_key,
             )
             return
         
         if self.is_on:
-            _LOGGER.debug(
-                "Skipping update for %s slot %s: already in sync",
-                self.lock.lock.entity_id,
-                self.slot_num,
-            )
             return
             
         if not (state := self.hass.states.get(self.lock.lock.entity_id)):
             _LOGGER.debug(
                 "Skipping update for %s slot %s: lock entity state not available",
                 self.lock.lock.entity_id,
-                self.slot_num,
+                self.slot_key,
             )
             return
             
@@ -257,7 +253,7 @@ class LockCodeManagerCodeSlotInSyncEntity(
             _LOGGER.debug(
                 "Skipping update for %s slot %s: lock state is %s",
                 self.lock.lock.entity_id,
-                self.slot_num,
+                self.slot_key,
                 state.state,
             )
             return
@@ -266,7 +262,7 @@ class LockCodeManagerCodeSlotInSyncEntity(
             _LOGGER.debug(
                 "Skipping update for %s slot %s: coordinator last update failed",
                 self.lock.lock.entity_id,
-                self.slot_num,
+                self.slot_key,
             )
             return
 
@@ -281,13 +277,13 @@ class LockCodeManagerCodeSlotInSyncEntity(
         active_state = self.hass.states.get(active_entity_id).state if active_entity_id else "Unknown"
         code_state = self.hass.states.get(code_entity_id).state if code_entity_id else "Unknown"
         
-        coordinator_data = self.coordinator.data.get(int(self.slot_num), "Not found")
+        coordinator_data = self.coordinator.data.get(str(self.slot_key), "Not found")
 
         _LOGGER.error(
             "Updating %s code slot %s because it is out of sync. Current states: "
             "pin=%s, name=%s, active=%s, code_on_lock=%s, coordinator_data=%s, is_on=%s",
             self.lock.lock.entity_id,
-            self.slot_num,
+            self.slot_key,
             pin_state,
             name_state,
             active_state,
@@ -363,7 +359,8 @@ class LockCodeManagerCodeSlotInSyncEntity(
                     pin_state := self._get_entity_state(CONF_PIN)
                 ) is not None and pin_state != self._get_entity_state(ATTR_CODE):
                     self._attr_is_on = False
-                    self.async_write_ha_state()
+                    if self._entity_added:
+                        self.async_write_ha_state()
                     
                     if self._is_read_only_mode:
                         _LOGGER.warning(
@@ -371,20 +368,20 @@ class LockCodeManagerCodeSlotInSyncEntity(
                             self.config_entry.entry_id,
                             self.config_entry.title,
                             self.lock.lock.entity_id,
-                            self.slot_num,
+                            self.slot_key,
                             pin_state,
                             self._get_entity_state(CONF_NAME),
                         )
                     else:
                         await self.lock.async_internal_set_usercode(
-                            int(self.slot_num), pin_state, self._get_entity_state(CONF_NAME)
+                            int(self.slot_key), pin_state, self._get_entity_state(CONF_NAME)
                         )
                         _LOGGER.info(
                             "%s (%s): Set usercode for %s slot %s",
                             self.config_entry.entry_id,
                             self.config_entry.title,
                             self.lock.lock.entity_id,
-                            self.slot_num,
+                            self.slot_key,
                         )
                     # Wait for lock to process the change before refreshing
                     await asyncio.sleep(1)
@@ -395,7 +392,8 @@ class LockCodeManagerCodeSlotInSyncEntity(
             elif self._get_entity_state(ATTR_ACTIVE) == STATE_OFF:
                 if self._get_entity_state(ATTR_CODE) != "":
                     self._attr_is_on = False
-                    self.async_write_ha_state()
+                    if self._entity_added:
+                        self.async_write_ha_state()
                     
                     if self._is_read_only_mode:
                         _LOGGER.warning(
@@ -403,16 +401,16 @@ class LockCodeManagerCodeSlotInSyncEntity(
                             self.config_entry.entry_id,
                             self.config_entry.title,
                             self.lock.lock.entity_id,
-                            self.slot_num,
+                            self.slot_key,
                         )
                     else:
-                        await self.lock.async_internal_clear_usercode(int(self.slot_num))
+                        await self.lock.async_internal_clear_usercode(int(self.slot_key))
                         _LOGGER.info(
                             "%s (%s): Cleared usercode for lock %s slot %s",
                             self.config_entry.entry_id,
                             self.config_entry.title,
                             self.lock.lock.entity_id,
-                            self.slot_num,
+                            self.slot_key,
                         )
                     # Wait for lock to process the change before refreshing
                     await asyncio.sleep(1)
@@ -422,7 +420,8 @@ class LockCodeManagerCodeSlotInSyncEntity(
                     self._attr_is_on = True
 
             if self._attr_is_on:
-                self.async_write_ha_state()
+                if self._entity_added:
+                    self.async_write_ha_state()
             else:
                 await self.coordinator.async_refresh()
 
@@ -437,4 +436,5 @@ class LockCodeManagerCodeSlotInSyncEntity(
                 self.hass, TrackStates(True, set(), set()), self._async_update_state
             ).async_remove
         )
+        self._entity_added = True  # Mark entity as fully added
         await self._async_update_state()

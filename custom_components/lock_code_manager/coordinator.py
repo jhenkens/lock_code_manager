@@ -15,7 +15,7 @@ from .providers import BaseLock
 _LOGGER = logging.getLogger(__name__)
 
 
-class LockUsercodeUpdateCoordinator(DataUpdateCoordinator[dict[int, int | str]]):
+class LockUsercodeUpdateCoordinator(DataUpdateCoordinator[dict[str, str]]):
     """Class to manage usercode updates."""
 
     def __init__(
@@ -31,14 +31,32 @@ class LockUsercodeUpdateCoordinator(DataUpdateCoordinator[dict[int, int | str]])
             update_interval=lock.usercode_scan_interval,
             config_entry=config_entry,
         )
-        self.data: dict[int, int | str] = {}
+        self.data: dict[str, str] = {}
 
-    async def async_get_usercodes(self) -> dict[int, int | str]:
-        """Update usercodes."""
+    async def async_get_usercodes(self) -> dict[str, str]:
+        """Update usercodes.
+
+        Returns:
+            Dictionary mapping slot keys (as strings) to usercode values (as strings).
+            Empty string means slot is empty/cleared.
+        """
         try:
-            return await self._lock.async_internal_get_usercodes()
+            raw_data = await self._lock.async_internal_get_usercodes()
+            # Ensure all keys and values are strings
+            return {str(k): str(v) if v else "" for k, v in raw_data.items()}
         except LockDisconnected as err:
             # We can silently fail if we've never been able to retrieve data
             if not self.data:
                 return {}
             raise UpdateFailed from err
+
+    def get_slot_value(self, slot_key: int | str) -> str | None:
+        """Get the usercode for a specific slot.
+
+        Args:
+            slot_key: The slot key (will be converted to string)
+
+        Returns:
+            The usercode as a string, empty string if slot is cleared, or None if slot doesn't exist
+        """
+        return self.data.get(str(slot_key))

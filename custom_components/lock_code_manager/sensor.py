@@ -30,7 +30,7 @@ async def async_setup_entry(
 
     @callback
     def add_code_slot_entities(
-        lock: BaseLock, slot_num: int, ent_reg: er.EntityRegistry
+        lock: BaseLock, slot_key: int, ent_reg: er.EntityRegistry
     ) -> None:
         """Add code slot sensor entities for slot."""
         coordinator: LockUsercodeUpdateCoordinator = hass.data[DOMAIN][
@@ -39,7 +39,7 @@ async def async_setup_entry(
         async_add_entities(
             [
                 LockCodeManagerCodeSlotSensorEntity(
-                    hass, ent_reg, config_entry, lock, coordinator, slot_num
+                    hass, ent_reg, config_entry, lock, coordinator, slot_key
                 )
             ],
             True,
@@ -71,26 +71,24 @@ class LockCodeManagerCodeSlotSensorEntity(
         config_entry: ConfigEntry,
         lock: BaseLock,
         coordinator: LockUsercodeUpdateCoordinator,
-        slot_num: int,
+        slot_key: int,
     ) -> None:
         """Initialize entity."""
         BaseLockCodeManagerCodeSlotPerLockEntity.__init__(
-            self, hass, ent_reg, config_entry, lock, slot_num, ATTR_CODE
+            self, hass, ent_reg, config_entry, lock, slot_key, ATTR_CODE
         )
         CoordinatorEntity.__init__(self, coordinator)
 
     @property
     def native_value(self) -> str | None:
         """Return native value."""
-        return self.coordinator.data.get(
-            self.slot_num, self.coordinator.data.get(int(self.slot_num))
-        )
+        return self.coordinator.get_slot_value(self.slot_key)
 
     @property
     def available(self) -> bool:
         """Return whether sensor is available or not."""
         return BaseLockCodeManagerCodeSlotPerLockEntity._is_available(self) and (
-            int(self.slot_num) in self.coordinator.data
+            str(self.slot_key) in self.coordinator.data
         )
 
     async def async_added_to_hass(self) -> None:

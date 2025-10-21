@@ -27,12 +27,12 @@ async def async_setup_entry(
     """Set up config entry."""
 
     @callback
-    def add_switch_entities(slot_num: int, ent_reg: er.EntityRegistry) -> None:
+    def add_switch_entities(slot_key: int, ent_reg: er.EntityRegistry) -> None:
         """Add switch entities for slot."""
         async_add_entities(
             [
                 LockCodeManagerSwitch(
-                    hass, ent_reg, config_entry, slot_num, CONF_ENABLED
+                    hass, ent_reg, config_entry, slot_key, CONF_ENABLED
                 )
             ],
             True,
@@ -72,11 +72,11 @@ class LockCodeManagerSwitch(BaseLockCodeManagerEntity, SwitchEntity):
             async_create(
                 self.hass,
                 (
-                    f"PIN is required to enable slot {self.slot_num} on the lock "
+                    f"PIN is required to enable slot {self.slot_key} on the lock "
                     f"configuration {self.config_entry.title}."
                 ),
                 "Problem with Lock Code Manager",
-                f"{DOMAIN}_{self.config_entry.entry_id}_{self.slot_num}_pin_required",
+                f"{DOMAIN}_{self.config_entry.entry_id}_{self.slot_key}_pin_required",
             )
             return
         self._update_config_entry(True)

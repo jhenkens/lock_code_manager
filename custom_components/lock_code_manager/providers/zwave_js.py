@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from datetime import timedelta
 import logging
 from typing import Any, Callable
 
@@ -81,6 +82,11 @@ class ZWaveJSLock(BaseLock):
         return async_get_node_from_entity_id(
             self.hass, self.lock.entity_id, self.ent_reg
         )
+    
+    @property
+    def usercode_scan_interval(self) -> timedelta:
+        """Return scan interval for usercodes."""
+        return timedelta(hours=1)
 
     @callback
     def _zwave_js_event_filter(self, event_data: dict[str, Any]) -> bool:

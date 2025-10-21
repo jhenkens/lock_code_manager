@@ -26,8 +26,8 @@
           "number_of_uses": "Number of Uses",
           "pin": "PIN Code"
         },
-        "description": "**Configure slot {slot_num}:** If you link a slot to a calendar, the slot will only be active when there is an in progress event, so the calendar should be disabled if you don't plan to use it. Number of Uses will only be enabled if set to a number greater than 0. Set to empty to disable.",
-        "title": "Configure Slot {slot_num}"
+        "description": "**Configure slot {slot_key}:** If you link a slot to a calendar, the slot will only be active when there is an in progress event, so the calendar should be disabled if you don't plan to use it. Number of Uses will only be enabled if set to a number greater than 0. Set to empty to disable.",
+        "title": "Configure Slot {slot_key}"
       },
       "reauth": {
         "data": {
@@ -68,7 +68,7 @@
         "name": "active"
       },
       "in_sync": {
-        "name": "Code slot {slot_num} in sync"
+        "name": "Code slot {slot_key} in sync"
       }
     },
     "event": {
@@ -90,7 +90,7 @@
     },
     "sensor": {
       "code": {
-        "name": "Code slot {slot_num}"
+        "name": "Code slot {slot_key}"
 
       }
     },

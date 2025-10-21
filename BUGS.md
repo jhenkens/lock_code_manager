@@ -102,8 +102,9 @@ The integration appears to be trying to register the same sensor entities twice,
 
 ### BUG-003: NoEntitySpecifiedError During Binary Sensor Creation
 **Priority:** HIGH
-**Status:** Open
+**Status:** FIXED
 **Discovered:** 2025-10-21
+**Fixed:** 2025-10-21
 
 **Description:**
 Binary sensor entities crash with `NoEntitySpecifiedError` when trying to write state during the `async_device_update()` call that happens as part of entity registration. The entity tries to write state before it's fully added to Home Assistant's entity registry.
@@ -147,15 +148,24 @@ However, at this point the entity is **not yet fully registered** with Home Assi
 - May prevent binary sensors from being created correctly
 - Likely contributes to BUG-002 (duplicate entity registration attempts)
 
-**Fix Strategy:**
-1. **Don't call `async_write_ha_state()` in `async_update()`** - Let Home Assistant handle state writing
-2. In `_async_update_state()`, only update internal state properties, don't write to HA
-3. Use the `@property` methods to return current state when HA asks for it
-4. Or: Add a check to see if entity is registered before calling `async_write_ha_state()`
+**Fix Applied:**
+Added `_entity_added` flag to track whether the entity has been fully added to Home Assistant. All `async_write_ha_state()` calls in `_async_update_state()` are now guarded with a check:
+```python
+if self._entity_added:
+    self.async_write_ha_state()
+```
 
-**Related Code:**
-- `custom_components/lock_code_manager/binary_sensor.py:298` (async_update)
-- `custom_components/lock_code_manager/binary_sensor.py:366` (_async_update_state calling async_write_ha_state)
+The flag is set to `True` in `async_added_to_hass()` after all initialization is complete.
+
+**Files Changed:**
+- `custom_components/lock_code_manager/binary_sensor.py:217` - Added `_entity_added` flag
+- `custom_components/lock_code_manager/binary_sensor.py:363,396,424` - Guard state writes with flag check
+- `custom_components/lock_code_manager/binary_sensor.py:436` - Set flag after entity fully added
+
+**Additional Improvements:**
+- Added `get_slot_value()` helper method to coordinator for type-safe slot lookups
+- Changed coordinator data type from `dict[int, int | str]` to `dict[str, str]` for consistency
+- All slot keys are now stored as strings to support non-numeric slots (e.g., 'A', 'B')
 
 **Note:** This is related to TODO #5 "Reduce ERROR-level logging for expected sync operations"
 
