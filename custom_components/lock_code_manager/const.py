@@ -15,6 +15,7 @@ STRATEGY_PATH = f"{FILES_URL_BASE}/{STRATEGY_FILENAME}"
 SERVICE_HARD_REFRESH_USERCODES = "hard_refresh_usercodes"
 
 ATTR_CONFIGURED_PLATFORMS = "configured_platforms"
+ATTR_INITIALIZATION_COMPLETE = "initialization_complete"
 ATTR_ENTITIES_ADDED_TRACKER = "entities_added_tracker"
 ATTR_ENTITIES_REMOVED_TRACKER = "entities_removed_tracker"
 

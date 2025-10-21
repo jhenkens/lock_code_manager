@@ -230,6 +230,16 @@ class LockCodeManagerCodeSlotInSyncEntity(
 
     async def async_update(self) -> None:
         """Update entity."""
+        # Skip sync operations until initial setup is complete
+        from .const import ATTR_INITIALIZATION_COMPLETE, DOMAIN
+        if not self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, {}).get(ATTR_INITIALIZATION_COMPLETE, False):
+            _LOGGER.debug(
+                "Skipping update for %s slot %s: initialization not complete",
+                self.lock.lock.entity_id,
+                self.slot_key,
+            )
+            return
+
         if self._lock.locked():
             _LOGGER.debug(
                 "Skipping update for %s slot %s: lock is already busy",
@@ -237,7 +247,7 @@ class LockCodeManagerCodeSlotInSyncEntity(
                 self.slot_key,
             )
             return
-        
+
         if self.is_on:
             return
             

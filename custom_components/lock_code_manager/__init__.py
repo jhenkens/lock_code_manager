@@ -49,6 +49,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import (
     ATTR_CONFIGURED_PLATFORMS,
+    ATTR_INITIALIZATION_COMPLETE,
     CONF_LOCKS,
     CONF_NUMBER_OF_USES,
     CONF_READ_ONLY,
@@ -216,6 +217,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         CONF_LOCKS: {},
         COORDINATORS: {},
         ATTR_CONFIGURED_PLATFORMS: set(),  # Track which platforms are configured
+        ATTR_INITIALIZATION_COMPLETE: False,  # Track if initial setup is complete
     }
 
     dev_reg = dr.async_get(hass)
@@ -608,4 +610,12 @@ async def async_update_listener(hass: HomeAssistant, config_entry: ConfigEntry) 
     _LOGGER.info(
         "%s (%s): Done creating and/or updating entities", entry_id, entry_title
     )
+
+    # Mark initialization as complete - entities can now perform sync operations
+    hass_data[entry_id][ATTR_INITIALIZATION_COMPLETE] = True
+
+    # Trigger a coordinator refresh to check sync status now that init is complete
+    for coordinator in hass_data[entry_id][COORDINATORS].values():
+        await coordinator.async_request_refresh()
+
     hass.config_entries.async_update_entry(config_entry, data=new_data, options={})
