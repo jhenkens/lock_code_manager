@@ -1,216 +1,6 @@
 # Lock Code Manager - Bug Tracker
 
-This file tracks bugs found in Home Assistant log analysis. Issues are prioritized and categorized for systematic resolution.
-
-## Critical Bugs
-
-### BUG-001: Platform Already Setup ValueError
-**Priority:** HIGH
-**Status:** FIXED
-**Discovered:** 2025-10-21
-**Fixed:** 2025-10-21
-
-**Description:**
-Multiple `ValueError` exceptions when setting up platforms during integration load. The integration attempts to set up the same platforms (text, switch) multiple times for the same config entry, causing failures.
-
-**Log Evidence:**
-```
-ValueError: Config entry House Locks (01K82F0V7Q5E4V1FNAYNRPYWTB) for lock_code_manager.text has already been setup!
-ValueError: Config entry House Locks (01K82F0V7Q5E4V1FNAYNRPYWTB) for lock_code_manager.switch has already been setup!
-```
-
-**Stack Trace:**
-```
-Traceback (most recent call last):
-  File "/usr/src/homeassistant/homeassistant/config_entries.py", line 761, in __async_setup_with_context
-    result = await component.async_setup_entry(hass, self)
-  File "/usr/src/homeassistant/homeassistant/components/switch/__init__.py", line 79, in async_setup_entry
-    return await hass.data[DATA_COMPONENT].async_setup_entry(entry)
-  File "/usr/src/homeassistant/homeassistant/helpers/entity_component.py", line 210, in async_setup_entry
-    raise ValueError(...)
-```
-
-**Occurrences:**
-- 3 text platform errors
-- 7 switch platform errors
-- Happens during initial setup at 11:34:54
-
-**Root Cause:**
-Home Assistant's `entity_component.py` tracks which platforms have been set up for each config entry. When `async_forward_entry_setups()` is called for a platform that's already been set up, it raises a ValueError.
-
-This indicates `async_update_listener()` is being called **during** the initial setup phase (when `async_setup_entry()` already sets up platforms), or platforms are being forwarded multiple times.
-
-**Impact:**
-- Prevents proper platform initialization
-- Entities may not be created correctly
-- Log spam with error messages
-- Triggers cascade of other issues (BUG-002)
-
-**Fix Applied:**
-Changed initialization of `ATTR_CONFIGURED_PLATFORMS` from `set(PLATFORMS)` to an empty `set()`, and explicitly mark platforms as configured after they're forwarded.
-
-The bug was caused by pre-populating `configured_platforms` with all core platforms before they were actually set up. This caused the update listener logic to incorrectly think platforms were already configured when they weren't, leading to duplicate setup attempts.
-
-Solution:
-1. Initialize `ATTR_CONFIGURED_PLATFORMS` as empty set (line 218)
-2. Forward core platforms in `async_setup_entry()` (line 231)
-3. Mark them as configured immediately after forwarding (line 233)
-4. Update listener now correctly tracks which platforms are actually configured
-
-**Files Changed:**
-- `custom_components/lock_code_manager/__init__.py:218,231-233`
-
-**Testing:**
-- All 26 tests passing
-- No more "platform already setup" errors in test output
-
----
-
-### BUG-002: Duplicate Entity ID Registration
-**Priority:** HIGH
-**Status:** FIXED
-**Discovered:** 2025-10-21
-**Fixed:** 2025-10-21
-
-**Description:**
-Home Assistant reports duplicate unique IDs when trying to register sensor entities, causing sensors to be ignored and not created. This occurred both during initial setup and when updating config entry settings (e.g., toggling read_only mode).
-
-**Log Evidence:**
-```
-ERROR Platform lock_code_manager does not generate unique IDs. ID 01K82F0V7Q5E4V1FNAYNRPYWTB|1|code|lock.back_door already exists - ignoring sensor.back_door_lock_code_slot_1
-ERROR Platform lock_code_manager does not generate unique IDs. ID 01K841CPSS0GPZWRM9A7PKBNMY|3|code|lock.front_door already exists - ignoring sensor.front_door_lock_code_slot_3
-```
-
-**Occurrences:**
-- Multiple instances for all locks during initial setup
-- Affects slots 1-9
-- Also triggered when changing config entry settings
-
-**Root Cause:**
-The **actual root cause** was duplicate dispatcher signals being sent in `async_update_listener()`:
-
-In the `slots_to_add` loop (`__init__.py` lines 499-558), we were sending `add_lock_slot` dispatcher signals **twice** for the same lock/slot combination:
-1. Lines 509-521: First loop through existing locks to add slot sensors ✅
-2. Lines 533-544: Add PIN active and other entities ✅
-3. Lines 546-558: **Duplicate loop** through existing locks - SENT SAME SIGNALS AGAIN! ❌
-
-This caused dispatcher handlers to be called twice with the same parameters, attempting to create the same entities twice.
-
-**Why it appeared during reload:**
-- Initial setup from BUG-001 also triggered this, but was masked by platform setup errors
-- During integration reload, dispatcher signals fire and queue up quickly
-- If both signals are processed before entities are registered, both attempts to create entities
-- Home Assistant's duplicate prevention works, but still logs errors
-
-**Impact:**
-- Duplicate entity registration errors during integration reload
-- Errors during initial setup when combined with BUG-001
-- Log spam and user confusion
-
-**Fix Applied:**
-Removed the duplicate dispatcher send loop (lines 546-558 in `__init__.py`).
-
-The comment on line 496 explains the intent:
-> "For each new slot, add standard entities and configuration entities. We also add slot sensors for existing locks only since new locks were already set up above."
-
-The second loop (lines 546-558) was redundant - it repeated what the first loop (lines 509-521) already did.
-
-**Investigation Journey:**
-1. Initially thought dispatcher handlers weren't idempotent → tried manual entity tracking
-2. Manual tracking caused "Entity not found" after restart (entity registry persistence issue)
-3. Learned Home Assistant already handles duplicate prevention via `unique_id`
-4. User reported: "if home assistant is already started, and then I reload the integration, I get the duplicate errors"
-5. Traced through code and found we were sending dispatcher signals twice
-6. Removed duplicate loop → problem solved
-
-**Key Lessons:**
-- Home Assistant's `async_add_entities()` DOES prevent duplicates when entities have `unique_id`
-- But we still shouldn't send duplicate dispatcher signals - it causes error log spam
-- Always trace through actual code execution rather than assuming the framework is wrong
-- The codebase organization made this bug hard to spot - clusterfuck confirmed 😅
-
-**Files Changed:**
-- `custom_components/lock_code_manager/__init__.py:546-558` - Removed duplicate loop
-
-**Testing:**
-- All 26 tests passing
-- Integration reload works without duplicate entity errors
-- Entities created correctly on initial setup and reload
-
----
-
-## High Priority Bugs
-
-### BUG-003: NoEntitySpecifiedError During Binary Sensor Creation
-**Priority:** HIGH
-**Status:** FIXED
-**Discovered:** 2025-10-21
-**Fixed:** 2025-10-21
-
-**Description:**
-Binary sensor entities crash with `NoEntitySpecifiedError` when trying to write state during the `async_device_update()` call that happens as part of entity registration. The entity tries to write state before it's fully added to Home Assistant's entity registry.
-
-**Log Evidence:**
-```
-ERROR [custom_components.lock_code_manager.binary_sensor] Updating lock.back_door code slot 1 because it is out of sync. Current states: pin=Unknown, name=Unknown, active=Unknown, code_on_lock=Unknown, coordinator_data=4269, is_on=None
-ERROR [homeassistant.components.binary_sensor] lock_code_manager: Error on device update!
-```
-
-**Stack Trace:**
-```
-Traceback (most recent call last):
-  File "/usr/src/homeassistant/homeassistant/helpers/entity_platform.py", line 807, in _async_add_entity
-    await entity.async_device_update(warning=False)
-  File "/usr/src/homeassistant/homeassistant/helpers/entity.py", line 1314, in async_device_update
-    await self.async_update()
-  File "/config/custom_components/lock_code_manager/binary_sensor.py", line 298, in async_update
-    await self._async_update_state()
-  File "/config/custom_components/lock_code_manager/binary_sensor.py", line 366, in _async_update_state
-    self.async_write_ha_state()
-  File "/usr/src/homeassistant/homeassistant/helpers/entity.py", line 1023, in async_write_ha_state
-    self._async_verify_state_writable()
-  File "/usr/src/homeassistant/homeassistant/helpers/entity.py", line 1006, in _async_verify_state_writable
-    raise NoEntitySpecifiedError(...)
-```
-
-**Occurrences:**
-- Happens for all locks and all slots during startup
-- Multiple waves of errors at 11:34:54 and 11:35:03
-- Triggered during `_async_add_entity` in entity platform
-
-**Root Cause:**
-When Home Assistant adds a new entity to a platform, it calls `async_device_update()` to get the initial state. The binary sensor's `async_update()` method calls `_async_update_state()` which in turn calls `async_write_ha_state()` at line 366.
-
-However, at this point the entity is **not yet fully registered** with Home Assistant (the add process is still in progress), so calling `async_write_ha_state()` raises `NoEntitySpecifiedError`.
-
-**Impact:**
-- Entity creation fails or is delayed
-- Error spam in logs (confusing for users)
-- May prevent binary sensors from being created correctly
-- Likely contributes to BUG-002 (duplicate entity registration attempts)
-
-**Fix Applied:**
-Added `_entity_added` flag to track whether the entity has been fully added to Home Assistant. All `async_write_ha_state()` calls in `_async_update_state()` are now guarded with a check:
-```python
-if self._entity_added:
-    self.async_write_ha_state()
-```
-
-The flag is set to `True` in `async_added_to_hass()` after all initialization is complete.
-
-**Files Changed:**
-- `custom_components/lock_code_manager/binary_sensor.py:217` - Added `_entity_added` flag
-- `custom_components/lock_code_manager/binary_sensor.py:363,396,424` - Guard state writes with flag check
-- `custom_components/lock_code_manager/binary_sensor.py:436` - Set flag after entity fully added
-
-**Additional Improvements:**
-- Added `get_slot_value()` helper method to coordinator for type-safe slot lookups
-- Changed coordinator data type from `dict[int, int | str]` to `dict[str, str]` for consistency
-- All slot keys are now stored as strings to support non-numeric slots (e.g., 'A', 'B')
-
-**Note:** This is related to TODO #5 "Reduce ERROR-level logging for expected sync operations"
-
----
+This file tracks active bugs found in Home Assistant log analysis. Fixed bugs are archived separately.
 
 ## Medium Priority Bugs
 
@@ -250,45 +40,345 @@ The binary sensor's sync detection logic treats Unknown states during startup th
 
 **Related Issues:**
 - This is TODO #5 in TODO.md
-- Related to BUG-003
+- Related to BUG-003 (fixed)
 
 ---
 
-## Analysis Summary
+### BUG-005: Unable to Remove Unknown Job Listener on Integration Reload
+**Priority:** MEDIUM
+**Status:** Open
+**Discovered:** 2025-10-21
 
-**Total Issues Found:** 4
-**Critical:** 2 (both FIXED ✅)
-**High:** 1 (FIXED ✅)
-**Medium:** 1 (Open)
+**Description:**
+When reloading the integration (e.g., after a config change), Home Assistant reports an error trying to remove a job listener that was registered for the `homeassistant_started` event. The listener was created during setup but cannot be removed during unload.
+
+**Log Evidence:**
+```
+2025-10-21 18:22:13.161 ERROR (MainThread) [homeassistant.core] Unable to remove unknown job listener (<Job onetime listen homeassistant_started functools.partial(<function _setup_entry_after_start at 0x7f3525ed4040>, <HomeAssistant NOT_RUNNING>, <ConfigEntry entry_id=01K841CPSS0GPZWRM9A7PKBNMY version=1 domain=lock_code_manager title=House Locks state=ConfigEntryState.SETUP_IN_PROGRESS unique_id=house_locks>) HassJobType.Callback <_OneTimeListener functools:functools.partial(<function _setup_entry_after_start at 0x7f3525ed4040>, <HomeAssistant RUNNING>, <ConfigEntry entry_id=01K841CPSS0GPZWRM9A7PKBNMY version=1 domain=lock_code_manager title=House Locks state=ConfigEntryState.UNLOAD_IN_PROGRESS unique_id=house_locks>)>>, None)
+```
+
+**Root Cause Analysis:**
+In `__init__.py` lines 257-265, the integration registers a listener for the `homeassistant_started` event:
+```python
+if hass.state == CoreState.running:
+    _setup_entry_after_start(hass, config_entry)
+else:
+    config_entry.async_on_unload(
+        hass.bus.async_listen_once(
+            EVENT_HOMEASSISTANT_STARTED,
+            functools.partial(_setup_entry_after_start, hass, config_entry),
+        )
+    )
+```
+
+The problem occurs when:
+1. Home Assistant starts and config entry is loaded BEFORE HA finishes starting
+2. A one-time listener is registered via `async_listen_once()` and tracked via `config_entry.async_on_unload()`
+3. Home Assistant finishes starting → listener fires and is auto-removed by HA
+4. User reloads integration → config entry unload tries to remove the listener again
+5. Listener is already gone → "Unable to remove unknown job listener" error
+
+**Potential Root Cause:**
+The listener has already been automatically removed by Home Assistant when the event fired, but `config_entry.async_on_unload()` doesn't know about this and tries to remove it again during unload.
+
+**Impact:**
+- Error log spam during integration reload
+- Confusing for users
+- May indicate lifecycle management issue
+- Doesn't appear to cause functional problems
+
+**Potential Fixes:**
+
+**Option 1: Store and check listener state**
+```python
+listener_remover = hass.bus.async_listen_once(
+    EVENT_HOMEASSISTANT_STARTED,
+    functools.partial(_setup_entry_after_start, hass, config_entry),
+)
+# Don't register with async_on_unload - let HA auto-remove it
+```
+
+**Option 2: Wrap listener removal in try/except**
+Not ideal - suppressing errors is bad practice.
+
+**Option 3: Check if event has already fired**
+Store a flag after `_setup_entry_after_start` executes, and only register unload callback if flag is False.
+
+**Option 4: Don't register one-time listeners with async_on_unload**
+One-time listeners are automatically cleaned up after firing. Only register persistent listeners with `async_on_unload()`.
+
+**Recommended Fix:**
+Option 4 - Don't register one-time listeners with `async_on_unload()` since they auto-cleanup. Change:
+```python
+# Before (wrong)
+config_entry.async_on_unload(
+    hass.bus.async_listen_once(...)
+)
+
+# After (correct)
+hass.bus.async_listen_once(...)
+```
+
+**Files Involved:**
+- `custom_components/lock_code_manager/__init__.py:260-265`
+
+---
+
+### BUG-006: Entity States Reset to Unknown After Config Change
+**Priority:** HIGH
+**Status:** Open
+**Discovered:** 2025-10-21
+
+**Description:**
+When making a configuration change to the integration (e.g., toggling read-only mode, changing slot configuration), all entity states reset to "unknown". The states remain unknown until the integration is disabled and re-enabled, at which point they return to their correct values.
+
+**User Report:**
+> "When you make a config change while the integration is running, all entities go to unknown state. If you disable and then reenable the integration, all the states go back to normal."
+
+**Root Cause Analysis:**
+
+The issue is in `async_update_listener()` in `__init__.py`. When processing config changes:
+
+1. **Current data structure** (`config_entry.data[CONF_SLOTS]`):
+   ```python
+   {
+       "1": {
+           CONF_PIN: "1234",        # Runtime value set by text entity
+           CONF_NAME: "Guest",      # Runtime value set by text entity
+           CONF_ENABLED: True,      # Runtime value set by switch entity
+           CONF_NUMBER_OF_USES: 0,  # Runtime value set by number entity
+           CONF_CALENDAR: "calendar.events",
+       }
+   }
+   ```
+
+2. **Options data structure** (`config_entry.options[CONF_SLOTS]`):
+   ```python
+   {
+       "1": {
+           CONF_CALENDAR: "calendar.events",
+           # PIN, name, enabled, number_of_uses NOT present - these come from YAML/initial config
+       }
+   }
+   ```
+
+3. **The problem** (lines 732-747):
+   ```python
+   # Build new_slots from options (YAML structure)
+   new_slots = config_entry.options.get(CONF_SLOTS, {})
+
+   # Merge runtime values from current data
+   merged_slots = copy.deepcopy(new_slots)
+   for slot_key in merged_slots:
+       if slot_key in curr_slots:
+           # Preserve runtime values
+           for runtime_key in (CONF_PIN, CONF_NAME, CONF_ENABLED, CONF_NUMBER_OF_USES):
+               if runtime_key in curr_slots[slot_key]:
+                   merged_slots[slot_key][runtime_key] = curr_slots[slot_key][runtime_key]
+
+   new_data = {
+       CONF_LOCKS: new_locks,
+       CONF_SLOTS: merged_slots,
+       CONF_READ_ONLY: config_entry.options.get(CONF_READ_ONLY, False),
+   }
+   hass.config_entries.async_update_entry(config_entry, data=new_data)
+   ```
+
+**Wait - the fix is already in the code!** This should be preserving runtime values. Let me check if there's another issue...
+
+**Potential Issues:**
+
+1. **The merge only happens for slots in `new_slots`**: If a slot is removed from options, it won't be in `merged_slots` at all
+2. **The merge only happens if slot exists in BOTH**: `if slot_key in curr_slots` - what if options adds a NEW slot?
+3. **Text entities might be writing state AFTER the merge**: Race condition?
+
+**Additional Investigation Needed:**
+- Check if text/switch/number entities are initialized with default values when first created
+- Check if the merge logic handles all cases (new slots, removed slots, existing slots)
+- Check entity initialization order - do entities write their state before or after `async_update_entry()`?
+
+**Impact:**
+- Major user experience issue
+- Requires integration reload to recover
+- May trigger unwanted lock code syncing if states show as "unknown" → out of sync
+
+**Potential Fixes:**
+
+**Option 1: Ensure entities initialize with default values**
+When creating text/switch/number entities, initialize them with sensible defaults instead of leaving them unset.
+
+**Option 2: Check merge logic edge cases**
+```python
+# Handle NEW slots not in current data
+merged_slots = copy.deepcopy(new_slots)
+for slot_key in merged_slots:
+    if slot_key in curr_slots:
+        # Preserve runtime values from existing slots
+        for runtime_key in (CONF_PIN, CONF_NAME, CONF_ENABLED, CONF_NUMBER_OF_USES):
+            if runtime_key in curr_slots[slot_key]:
+                merged_slots[slot_key][runtime_key] = curr_slots[slot_key][runtime_key]
+    else:
+        # New slot - initialize with defaults
+        merged_slots[slot_key].setdefault(CONF_PIN, "")
+        merged_slots[slot_key].setdefault(CONF_NAME, "")
+        merged_slots[slot_key].setdefault(CONF_ENABLED, False)
+        merged_slots[slot_key].setdefault(CONF_NUMBER_OF_USES, 0)
+```
+
+**Option 3: Use RestoreEntity**
+Change entities to inherit from `RestoreEntity` so they can restore their last state after reload.
+
+**Files Involved:**
+- `custom_components/lock_code_manager/__init__.py:732-747` (merge logic)
+- `custom_components/lock_code_manager/text.py` (PIN and name entities)
+- `custom_components/lock_code_manager/switch.py` (enabled entity)
+- `custom_components/lock_code_manager/number.py` (number of uses entity)
+
+**Testing Required:**
+1. Set up integration with slots configured
+2. Set PIN, name, enabled state via UI
+3. Make a config change (e.g., toggle read-only)
+4. Verify entities maintain their state values
+5. Add a new slot via config change
+6. Verify new slot initializes with sensible defaults
+
+---
+
+### BUG-007: Sync Logic Doesn't Clear Codes When Active=Off and PIN=Unknown
+**Priority:** MEDIUM
+**Status:** Open
+**Discovered:** 2025-10-21
+
+**Description:**
+The binary sensor's sync logic doesn't properly handle the case where:
+- Active (enabled) state = OFF (slot should be disabled)
+- Current PIN on lock = some value (e.g., "1234")
+- Desired PIN from text entity = "unknown" (not initialized)
+
+In this case, the integration should clear the code from the lock (because active=OFF), but instead it doesn't sync because the PIN is unknown.
+
+**User Report:**
+> "If desired pin in unknown / not initialized, then we don't sync the state properly, even if active = false. I think this is a bug in the binary_sensor state comparison? But I'm not sure... We also maybe should just initialize that text field when first created?"
+
+**Root Cause Analysis:**
+
+In `binary_sensor.py:374-381`, the `_should_update()` method checks:
+```python
+def _should_update(self):
+    desired_state = self._get_entity_state(ATTR_ACTIVE)
+    desired_pin = self._get_entity_state(CONF_PIN)
+    current_pin = self._get_entity_state(ATTR_CODE)
+    desired_state_is_set = desired_state in (STATE_ON, STATE_OFF)
+    current_pin_matches_desired = (
+        (desired_state == STATE_OFF and current_pin == "") or
+        (desired_state == STATE_ON and desired_pin is not None and desired_pin == current_pin)
+    )
+    return desired_state_is_set and not current_pin_matches_desired
+```
+
+**The Problem:**
+When `desired_state == STATE_OFF` and `current_pin == "1234"` (not empty), the comparison is:
+- `current_pin_matches_desired = (STATE_OFF and "1234" == "")` → **False**
+- `return True and not False` → **True** (should update)
+- This SHOULD trigger a sync to clear the code! ✅
+
+Wait, that looks correct... Let me check the validation logic that happens before `_should_update()`:
+
+In `binary_sensor.py:302-314`:
+```python
+# Before checking if we should update, verify all states are valid
+for key in (CONF_PIN, CONF_NAME, ATTR_ACTIVE):
+    state = self._get_entity_state(key)
+    if state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+        _LOGGER.debug(
+            "Skipping sync check for %s slot %s: %s state is %s",
+            ...
+        )
+        return  # ← THIS IS THE BUG!
+```
+
+**THERE IT IS!** The validation checks if CONF_PIN is UNKNOWN, and if so, returns early without checking if we need to clear the code!
+
+**The Real Root Cause:**
+The validation logic checks if PIN is UNKNOWN and skips sync entirely, even when:
+- Active = OFF (we should clear the code)
+- Current PIN on lock = "1234" (code exists)
+- PIN state doesn't matter when active=OFF!
+
+**Impact:**
+- Slots with active=OFF but unknown PIN don't get cleared from the lock
+- Lock may have codes that should be disabled but remain active
+- Security issue if old codes aren't cleared
+
+**Fix Strategy:**
+The validation should allow sync when active=OFF, regardless of PIN state:
+
+```python
+# Before checking if we should update, verify all states are valid
+# Exception: if active=OFF, we don't need a valid PIN to clear the code
+desired_state = self._get_entity_state(ATTR_ACTIVE)
+
+for key in (CONF_PIN, CONF_NAME, ATTR_ACTIVE):
+    state = self._get_entity_state(key)
+    if state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+        # Allow clearing codes when active=OFF even if PIN is unknown
+        if key == CONF_PIN and desired_state == STATE_OFF:
+            continue
+        _LOGGER.debug(
+            "Skipping sync check for %s slot %s: %s state is %s",
+            self.lock.lock.entity_id,
+            self.slot_key,
+            key,
+            state,
+        )
+        return
+```
+
+**Alternative Fix:**
+Initialize PIN text entity with empty string ("") instead of leaving it unset/unknown:
+- In `text.py`, ensure new PIN entities have `_attr_native_value = ""`
+- This way PIN is never "unknown"
+
+**Recommended Approach:**
+Both fixes:
+1. Initialize PIN entities with empty string (prevents the issue)
+2. Update validation logic to allow clearing when active=OFF (defense in depth)
+
+**Files Involved:**
+- `custom_components/lock_code_manager/binary_sensor.py:302-314` (validation logic)
+- `custom_components/lock_code_manager/text.py` (PIN entity initialization)
+
+**Testing Required:**
+1. Create new slot (PIN will be unknown/empty)
+2. Set active=OFF
+3. Manually set a code on the lock for that slot
+4. Verify integration clears the code despite PIN being unknown
+5. Verify log messages are appropriate (DEBUG, not ERROR)
+
+---
+
+## Summary
+
+**Total Active Bugs:** 4
+- **High Priority:** 1 (BUG-006)
+- **Medium Priority:** 3 (BUG-004, BUG-005, BUG-007)
 
 **Status:**
-- BUG-001: Platform Already Setup ValueError - **FIXED** ✅
-- BUG-002: Duplicate Entity ID Registration - **FIXED** ✅
-- BUG-003: NoEntitySpecifiedError During Binary Sensor Creation - **FIXED** ✅
-- BUG-004: Inappropriate ERROR-Level Logging During Startup - **Open** (partially addressed with INFO logging)
+- BUG-004: Inappropriate ERROR-Level Logging - **Open**
+- BUG-005: Unable to Remove Job Listener - **Open**
+- BUG-006: Entities Reset to Unknown After Config Change - **Open**
+- BUG-007: Sync Logic Doesn't Clear When PIN=Unknown - **Open**
 
-**Common Root Cause:**
-Most issues stemmed from BUG-001 (platform setup errors), which caused a cascade of problems:
-1. Platforms set up multiple times → ValueError (FIXED)
-2. Dispatcher signals fire multiple times → Duplicate entities (FIXED with idempotent handlers)
-3. Binary sensors update before ready → Update errors (FIXED with entity_added flag)
-
-**Fix Summary:**
-1. ✅ Fixed BUG-001 by properly tracking platform configuration state
-2. ✅ Fixed BUG-002 by making dispatcher handlers idempotent
-3. ✅ Fixed BUG-003 by deferring state writes until entity fully added
-4. 🔄 Partially addressed BUG-004 by changing ERROR to INFO for normal sync operations
-
-**Remaining Work:**
-- Complete BUG-004: Improve startup state detection to reduce INFO logging during initialization
-- Consider adding DEBUG-level logging for initialization events
-- Implement proper log level strategy throughout integration
+**Priority Order for Fixes:**
+1. **BUG-006** (HIGH) - Entities resetting to unknown breaks user experience
+2. **BUG-007** (MEDIUM) - Security concern if codes aren't cleared
+3. **BUG-005** (MEDIUM) - Error log spam, but no functional impact
+4. **BUG-004** (MEDIUM) - Logging cleanup, cosmetic issue
 
 ---
 
 ## Notes
 
-- Log analyzed: `Home Assistant Log Oct 21 2025.log`
-- All issues related to config entry `01K82F0V7Q5E4V1FNAYNRPYWTB` (House Locks)
-- Integration appears functional despite errors (read-only mode working)
-- No crashes or data corruption observed
+- Original logs analyzed: `Home Assistant Log Oct 21 2025.log`
+- Config entry: `01K841CPSS0GPZWRM9A7PKBNMY` (House Locks)
+- Fixed bugs archived: BUG-001, BUG-002, BUG-003

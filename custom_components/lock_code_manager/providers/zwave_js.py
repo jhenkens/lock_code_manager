@@ -223,6 +223,11 @@ class ZWaveJSLock(BaseLock):
             raise LockDisconnected
 
         try:
+            _LOGGER.debug(
+                "Lock %s: Retrieving usercodes from Z-Wave JS node %s",
+                self.lock.entity_id,
+                self.node.node_id,
+            )
             usercodes = get_usercodes(self.node)
             for slot in usercodes:
                 code_slot_int = int(slot["code_slot"])
