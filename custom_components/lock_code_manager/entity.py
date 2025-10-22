@@ -41,6 +41,7 @@ class BaseLockCodeManagerEntity(Entity):
     _attr_entity_category = EntityCategory.CONFIG
     _attr_has_entity_name = True
     _attr_should_poll = False
+    _default_value = None
 
     def __init__(
         self,
@@ -85,7 +86,7 @@ class BaseLockCodeManagerEntity(Entity):
     @property
     def _state(self) -> Any:
         """Return state of entity."""
-        return get_slot_data(self.config_entry, self.slot_key).get(self.key)
+        return get_slot_data(self.config_entry, self.slot_key).get(self.key, self._default_value)
 
     @final
     @property

@@ -43,7 +43,7 @@ _LOGGER = logging.getLogger(__name__)
 UI_CODE_SLOT_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_NAME): cv.string,
-        vol.Optional(CONF_PIN): cv.string,
+        vol.Optional(CONF_PIN, default=""): cv.string,
         vol.Required(CONF_ENABLED, default=True): cv.boolean,
         vol.Optional(CONF_CALENDAR): sel.EntitySelector(
             sel.EntitySelectorConfig(domain=CALENDAR_DOMAIN)
@@ -208,7 +208,7 @@ class LockCodeManagerFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             if user_input.get(CONF_ENABLED) and not user_input.get(CONF_PIN):
                 errors[CONF_PIN] = "missing_pin_if_enabled"
             else:
-                self.data[CONF_SLOTS][int(self.slots_to_configure.pop(0))] = (
+                self.data[CONF_SLOTS][str(int(self.slots_to_configure.pop(0)))] = (
                     CODE_SLOT_SCHEMA(user_input)
                 )
                 if not self.slots_to_configure:

@@ -51,6 +51,7 @@ class LockCodeManagerText(BaseLockCodeManagerEntity, TextEntity):
             self, hass, ent_reg, config_entry, slot_key, key
         )
         self._attr_mode = text_mode
+        self._default_value = ""
         if text_mode == TextMode.PASSWORD:
             self._attr_native_max = 8
             self._attr_pattern: str = "^[0-9A-Z]*$"

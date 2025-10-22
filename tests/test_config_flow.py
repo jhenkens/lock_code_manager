@@ -114,8 +114,8 @@ async def test_config_flow_ui(hass: HomeAssistant):
         CONF_LOCKS: [LOCK_1_ENTITY_ID],
         CONF_READ_ONLY: True,
         CONF_SLOTS: {
-            1: {CONF_ENABLED: True, CONF_PIN: "1234"},
-            2: {CONF_ENABLED: True, CONF_PIN: "5678"},
+            "1": {CONF_ENABLED: True, CONF_PIN: "1234"},
+            "2": {CONF_ENABLED: True, CONF_PIN: "5678"},
         },
     }
 
@@ -142,8 +142,8 @@ async def test_config_flow_yaml(hass: HomeAssistant):
         flow_id,
         {
             CONF_SLOTS: {
-                1: {CONF_ENABLED: True, CONF_PIN: "1234"},
-                2: {CONF_ENABLED: True, CONF_PIN: "5678"},
+                "1": {CONF_ENABLED: True, CONF_PIN: "1234"},
+                "2": {CONF_ENABLED: True, CONF_PIN: "5678"},
             }
         },
     )

@@ -35,6 +35,7 @@ class LockCodeManagerSwitch(BaseLockCodeManagerEntity, SwitchEntity):
     """Switch entity for lock code manager."""
 
     _pin_entity_id: str = ""
+    _default_value: bool = False
 
     @property
     def is_on(self) -> bool:

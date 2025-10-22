@@ -301,3 +301,9 @@ Both fixes:
 - Original logs analyzed: `Home Assistant Log Oct 21 2025.log`
 - Config entry: `01K841CPSS0GPZWRM9A7PKBNMY` (House Locks)
 - Fixed bugs: BUG-001, BUG-002, BUG-003, BUG-005
+
+
+
+
+NEW BUGS:
+When we remove the entities for a code slot, we don't clean up their devices!

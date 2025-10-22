@@ -443,11 +443,7 @@ async def async_update_listener(hass: HomeAssistant, config_entry: ConfigEntry) 
     configured_platforms: set[Platform] = hass_data[entry_id][ATTR_CONFIGURED_PLATFORMS]
 
     curr_slots: dict[str, Any] = {**config_entry.data.get(CONF_SLOTS, {})}
-    _curr_slots = {f"{k.__class__.__name__}({k})": v for k, v in curr_slots.items()}
-    _LOGGER.debug("Current slots: %s", _curr_slots)
     new_slots: dict[str, Any] = {**config_entry.options.get(CONF_SLOTS, {})}
-    _new_slots = {f"{k.__class__.__name__}({k})": v for k, v in new_slots.items()}
-    _LOGGER.debug("New slots: %s", _new_slots)
     curr_locks: list[str] = [*config_entry.data.get(CONF_LOCKS, [])]
     new_locks: list[str] = [*config_entry.options.get(CONF_LOCKS, [])]
 
