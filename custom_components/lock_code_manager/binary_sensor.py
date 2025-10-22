@@ -52,8 +52,6 @@ from .entity import BaseLockCodeManagerCodeSlotPerLockEntity, BaseLockCodeManage
 from .providers import BaseLock
 
 _LOGGER = logging.getLogger(__name__)
-SCAN_INTERVAL = timedelta(seconds=30)
-
 
 async def async_setup_entry(
     hass: HomeAssistant,
