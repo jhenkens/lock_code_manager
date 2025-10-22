@@ -67,7 +67,7 @@ def enabled_requires_pin(data: dict[str, Any]) -> dict[str, Any]:
 
 
 CODE_SLOTS_SCHEMA = vol.All(
-    vol.Schema({vol.Coerce(int): CODE_SLOT_SCHEMA}), enabled_requires_pin
+    vol.Schema({cv.string: CODE_SLOT_SCHEMA}), enabled_requires_pin
 )
 
 LOCKS_FILTER_CONFIG = [
