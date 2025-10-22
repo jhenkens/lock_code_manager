@@ -218,6 +218,8 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         COORDINATORS: {},
         ATTR_CONFIGURED_PLATFORMS: set(),  # Track which platforms are configured
         ATTR_INITIALIZATION_COMPLETE: False,  # Track if initial setup is complete
+        "add_entities_callbacks": {},  # Store async_add_entities callbacks per platform
+        "entities": {},  # Track created entities for removal: {platform: {slot_key: [entity, ...]}}
     }
 
     dev_reg = dr.async_get(hass)

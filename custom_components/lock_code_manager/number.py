@@ -8,7 +8,6 @@ from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import CONF_NUMBER_OF_USES, DOMAIN, EVENT_LOCK_STATE_CHANGED
@@ -23,26 +22,10 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> bool:
     """Set up config entry."""
-
-    @callback
-    def add_number_entities(slot_key: int, ent_reg: er.EntityRegistry) -> None:
-        """Add number entities for slot."""
-        async_add_entities(
-            [
-                LockCodeManagerNumber(
-                    hass, ent_reg, config_entry, slot_key, CONF_NUMBER_OF_USES
-                )
-            ],
-            True,
-        )
-
-    config_entry.async_on_unload(
-        async_dispatcher_connect(
-            hass,
-            f"{DOMAIN}_{config_entry.entry_id}_add_{CONF_NUMBER_OF_USES}",
-            add_number_entities,
-        )
-    )
+    # Store callback for centralized entity management
+    hass.data[DOMAIN][config_entry.entry_id]["add_entities_callbacks"][
+        "number"
+    ] = async_add_entities
     return True
 
 

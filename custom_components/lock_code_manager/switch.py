@@ -10,7 +10,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ENABLED, CONF_PIN, STATE_UNKNOWN, Platform
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
@@ -25,26 +24,10 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> bool:
     """Set up config entry."""
-
-    @callback
-    def add_switch_entities(slot_key: int, ent_reg: er.EntityRegistry) -> None:
-        """Add switch entities for slot."""
-        async_add_entities(
-            [
-                LockCodeManagerSwitch(
-                    hass, ent_reg, config_entry, slot_key, CONF_ENABLED
-                )
-            ],
-            True,
-        )
-
-    config_entry.async_on_unload(
-        async_dispatcher_connect(
-            hass,
-            f"{DOMAIN}_{config_entry.entry_id}_add",
-            add_switch_entities,
-        )
-    )
+    # Store callback for centralized entity management
+    hass.data[DOMAIN][config_entry.entry_id]["add_entities_callbacks"][
+        "switch"
+    ] = async_add_entities
     return True
 
 

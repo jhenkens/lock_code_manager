@@ -8,7 +8,6 @@ from homeassistant.components.sensor import DOMAIN as SENSOR_DOMAIN, SensorEntit
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -27,33 +26,10 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> bool:
     """Set up config entry."""
-
-    @callback
-    def add_code_slot_entities(
-        lock: BaseLock, slot_key: int, ent_reg: er.EntityRegistry
-    ) -> None:
-        """Add code slot sensor entities for slot."""
-        # Home Assistant's entity platform automatically handles duplicate prevention
-        # based on unique_id, so we can safely call async_add_entities multiple times
-        coordinator: LockUsercodeUpdateCoordinator = hass.data[DOMAIN][
-            config_entry.entry_id
-        ][COORDINATORS][lock.lock.entity_id]
-        async_add_entities(
-            [
-                LockCodeManagerCodeSlotSensorEntity(
-                    hass, ent_reg, config_entry, lock, coordinator, slot_key
-                )
-            ],
-            True,
-        )
-
-    config_entry.async_on_unload(
-        async_dispatcher_connect(
-            hass,
-            f"{DOMAIN}_{config_entry.entry_id}_add_lock_slot",
-            add_code_slot_entities,
-        )
-    )
+    # Store callback for centralized entity management
+    hass.data[DOMAIN][config_entry.entry_id]["add_entities_callbacks"][
+        "sensor"
+    ] = async_add_entities
     return True
 
 

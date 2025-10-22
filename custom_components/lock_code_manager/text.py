@@ -10,7 +10,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ENABLED, CONF_NAME, CONF_PIN, STATE_ON, Platform
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
@@ -25,24 +24,10 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> bool:
     """Set up config entry."""
-
-    @callback
-    def add_standard_text_entities(slot_key: int, ent_reg: er.EntityRegistry) -> None:
-        """Add standard text entities for slot."""
-        async_add_entities(
-            [
-                LockCodeManagerText(hass, ent_reg, config_entry, slot_key, *props)
-                for props in ((CONF_NAME, TextMode.TEXT), (CONF_PIN, TextMode.PASSWORD))
-            ],
-            True,
-        )
-
-    config_entry.async_on_unload(
-        async_dispatcher_connect(
-            hass, f"{DOMAIN}_{config_entry.entry_id}_add", add_standard_text_entities
-        )
-    )
-
+    # Store callback for centralized entity management
+    hass.data[DOMAIN][config_entry.entry_id]["add_entities_callbacks"][
+        "text"
+    ] = async_add_entities
     return True
 
 

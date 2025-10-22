@@ -30,7 +30,6 @@ from homeassistant.core import (
     callback,
 )
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import TrackStates, async_track_state_change_filtered
@@ -62,50 +61,10 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> bool:
     """Set up config entry."""
-
-    @callback
-    def add_pin_active_entity(slot_key: int, ent_reg: er.EntityRegistry) -> None:
-        """Add active binary sensor entities for slot."""
-        async_add_entities(
-            [
-                LockCodeManagerActiveEntity(
-                    hass, ent_reg, config_entry, slot_key, ATTR_ACTIVE
-                )
-            ],
-            True,
-        )
-
-    @callback
-    def add_code_slot_entities(
-        lock: BaseLock, slot_key: int, ent_reg: er.EntityRegistry
-    ):
-        """Add code slot sensor entities for slot."""
-        # Home Assistant's entity platform automatically handles duplicate prevention
-        # based on unique_id, so we can safely call async_add_entities multiple times
-        coordinator: LockUsercodeUpdateCoordinator = hass.data[DOMAIN][
-            config_entry.entry_id
-        ][COORDINATORS][lock.lock.entity_id]
-        async_add_entities(
-            [
-                LockCodeManagerCodeSlotInSyncEntity(
-                    hass, ent_reg, config_entry, coordinator, lock, slot_key
-                )
-            ],
-            True,
-        )
-
-    config_entry.async_on_unload(
-        async_dispatcher_connect(
-            hass, f"{DOMAIN}_{config_entry.entry_id}_add", add_pin_active_entity
-        )
-    )
-    config_entry.async_on_unload(
-        async_dispatcher_connect(
-            hass,
-            f"{DOMAIN}_{config_entry.entry_id}_add_lock_slot",
-            add_code_slot_entities,
-        )
-    )
+    # Store callback for centralized entity management
+    hass.data[DOMAIN][config_entry.entry_id]["add_entities_callbacks"][
+        "binary_sensor"
+    ] = async_add_entities
     return True
 
 
