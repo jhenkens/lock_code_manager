@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import functools
 import logging
 from pathlib import Path
@@ -46,6 +47,8 @@ from homeassistant.helpers import (
     device_registry as dr,
     entity_registry as er,
 )
+
+from homeassistant.const import CONF_ENABLED, CONF_NAME, CONF_PIN
 
 from .const import (
     ATTR_ACTIVE,
@@ -729,11 +732,21 @@ async def async_update_listener(hass: HomeAssistant, config_entry: ConfigEntry) 
                 )
                 add_number([number_entity])
 
+    # Merge runtime entity values from current data into new slots configuration
+    # This preserves PIN codes, names, etc. that entities have been updating
+    merged_slots = copy.deepcopy(new_slots)
+    for slot_key in merged_slots:
+        if slot_key in curr_slots:
+            # Preserve runtime values (PIN, name, etc.) from current data
+            for runtime_key in (CONF_PIN, CONF_NAME, CONF_ENABLED, CONF_NUMBER_OF_USES):
+                if runtime_key in curr_slots[slot_key]:
+                    merged_slots[slot_key][runtime_key] = curr_slots[slot_key][runtime_key]
+
     # Existing entities will listen to updates and act on it
     new_data = {
         CONF_LOCKS: new_locks,
-        CONF_SLOTS: new_slots,
-        CONF_READ_ONLY: get_entry_data(config_entry, CONF_READ_ONLY, False),
+        CONF_SLOTS: merged_slots,
+        CONF_READ_ONLY: config_entry.options.get(CONF_READ_ONLY, False),
     }
     _LOGGER.info(
         "%s (%s): Done creating and/or updating entities", entry_id, entry_title

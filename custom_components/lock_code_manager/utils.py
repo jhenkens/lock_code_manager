@@ -47,23 +47,3 @@ def generate_lock_entity_unique_id(
 
     """
     return f"{entry_id}|{slot_key}|{entity_key}|{lock_entity_id}"
-
-
-def generate_base_unique_id(
-    entry_id: str,
-    slot_key: str | int,
-) -> str:
-    """
-    Generate base unique ID for provider entities.
-
-    Used by providers for internal entity creation.
-
-    Args:
-        entry_id: Config entry ID
-        slot_key: Slot number/key
-
-    Returns:
-        Unique ID in format: {entry_id}|{slot_key}
-
-    """
-    return f"{entry_id}|{slot_key}"
