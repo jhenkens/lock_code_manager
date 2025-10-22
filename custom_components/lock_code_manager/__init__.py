@@ -15,6 +15,7 @@ from homeassistant.components.lovelace.const import (
     CONF_RESOURCE_TYPE_WS,
     DOMAIN as LL_DOMAIN,
 )
+from homeassistant.components.text import TextMode
 from homeassistant.components.lovelace.resources import (
     ResourceStorageCollection,
     ResourceYAMLCollection,
@@ -45,11 +46,13 @@ from homeassistant.helpers import (
     device_registry as dr,
     entity_registry as er,
 )
-from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import (
+    ATTR_ACTIVE,
+    ATTR_CODE,
     ATTR_CONFIGURED_PLATFORMS,
     ATTR_INITIALIZATION_COMPLETE,
+    ATTR_IN_SYNC,
     CONF_LOCKS,
     CONF_NUMBER_OF_USES,
     CONF_READ_ONLY,
@@ -68,7 +71,19 @@ from .coordinator import LockUsercodeUpdateCoordinator
 from .data import get_entry_data
 from .helpers import async_create_lock_instance, get_locks_from_targets
 from .providers import BaseLock
+from .utils import generate_entity_unique_id, generate_lock_entity_unique_id
 from .websocket import async_setup as async_websocket_setup
+
+# Import entity classes for centralized creation
+from .binary_sensor import (
+    LockCodeManagerActiveEntity,
+    LockCodeManagerCodeSlotInSyncEntity,
+)
+from .event import LockCodeManagerCodeSlotEventEntity
+from .number import LockCodeManagerNumber
+from .sensor import LockCodeManagerCodeSlotSensorEntity
+from .switch import LockCodeManagerSwitch
+from .text import LockCodeManagerText
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -340,6 +355,75 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
     return unload_ok
 
 
+def _create_slot_entities_for_lock(
+    hass: HomeAssistant,
+    ent_reg: er.EntityRegistry,
+    config_entry: ConfigEntry,
+    lock: BaseLock,
+    slot_key: str,
+) -> tuple[list, list]:
+    """Create sensor and binary_sensor entities for a lock/slot combination.
+
+    Returns: (sensor_entities, binary_sensor_entities)
+    """
+    coordinator = hass.data[DOMAIN][config_entry.entry_id][COORDINATORS][
+        lock.lock.entity_id
+    ]
+
+    sensor_entities = [
+        LockCodeManagerCodeSlotSensorEntity(
+            hass, ent_reg, config_entry, lock, coordinator, slot_key
+        )
+    ]
+
+    binary_sensor_entities = [
+        LockCodeManagerCodeSlotInSyncEntity(
+            hass, ent_reg, config_entry, coordinator, lock, slot_key
+        )
+    ]
+
+    return sensor_entities, binary_sensor_entities
+
+
+def _create_standard_slot_entities(
+    hass: HomeAssistant,
+    ent_reg: er.EntityRegistry,
+    config_entry: ConfigEntry,
+    slot_key: str,
+    slot_config: dict[str, Any],
+) -> tuple[list, list, list, list, list]:
+    """Create standard entities for a slot.
+
+    Returns: (binary_sensor_entities, event_entities, text_entities, switch_entities, number_entities)
+    """
+    binary_sensor_entities = [
+        LockCodeManagerActiveEntity(hass, ent_reg, config_entry, slot_key, ATTR_ACTIVE)
+    ]
+
+    event_entities = [
+        LockCodeManagerCodeSlotEventEntity(
+            hass, ent_reg, config_entry, slot_key, EVENT_PIN_USED
+        )
+    ]
+
+    text_entities = [
+        LockCodeManagerText(hass, ent_reg, config_entry, slot_key, CONF_NAME, TextMode.TEXT),
+        LockCodeManagerText(hass, ent_reg, config_entry, slot_key, CONF_PIN, TextMode.PASSWORD),
+    ]
+
+    switch_entities = [
+        LockCodeManagerSwitch(hass, ent_reg, config_entry, slot_key, CONF_ENABLED)
+    ]
+
+    number_entities = []
+    if slot_config.get(CONF_NUMBER_OF_USES) not in (None, ""):
+        number_entities = [
+            LockCodeManagerNumber(hass, ent_reg, config_entry, slot_key, CONF_NUMBER_OF_USES)
+        ]
+
+    return binary_sensor_entities, event_entities, text_entities, switch_entities, number_entities
+
+
 async def async_update_listener(hass: HomeAssistant, config_entry: ConfigEntry) -> None:
     """Update listener."""
     # No need to update if there are no options because that only happens at the end
@@ -349,8 +433,6 @@ async def async_update_listener(hass: HomeAssistant, config_entry: ConfigEntry) 
 
     hass_data = hass.data[DOMAIN]
     ent_reg = er.async_get(hass)
-    entities_to_remove: dict[str, bool] = {}
-    entities_to_add: dict[str, bool] = {}
 
     entry_id = config_entry.entry_id
     entry_title = config_entry.title
@@ -400,7 +482,26 @@ async def async_update_listener(hass: HomeAssistant, config_entry: ConfigEntry) 
         _LOGGER.debug(
             "%s (%s): Removing lock %s entities", entry_id, entry_title, lock_entity_id
         )
-        async_dispatcher_send(hass, f"{DOMAIN}_{entry_id}_remove_lock", lock_entity_id)
+        # Remove sensor and binary_sensor entities for this lock across all slots that exist
+        for slot_key in curr_slots:
+            # Remove sensor entity
+            sensor_unique_id = generate_lock_entity_unique_id(
+                entry_id, slot_key, ATTR_CODE, lock_entity_id
+            )
+            if sensor_entity_id := ent_reg.async_get_entity_id(
+                Platform.SENSOR, DOMAIN, sensor_unique_id
+            ):
+                ent_reg.async_remove(sensor_entity_id)
+
+            # Remove binary_sensor in-sync entity
+            binary_sensor_unique_id = generate_lock_entity_unique_id(
+                entry_id, slot_key, ATTR_IN_SYNC, lock_entity_id
+            )
+            if binary_sensor_entity_id := ent_reg.async_get_entity_id(
+                Platform.BINARY_SENSOR, DOMAIN, binary_sensor_unique_id
+            ):
+                ent_reg.async_remove(binary_sensor_entity_id)
+
         lock: BaseLock = hass.data[DOMAIN][CONF_LOCKS][lock_entity_id]
         if lock.device_entry:
             dev_reg = dr.async_get(hass)
@@ -411,8 +512,7 @@ async def async_update_listener(hass: HomeAssistant, config_entry: ConfigEntry) 
             hass, config_entry, lock_entity_id=lock_entity_id, remove_permanently=True
         )
 
-    # Notify any existing entities that additional locks have been added then create
-    # slot PIN sensors for the new locks
+    # Create slot PIN sensors for the new locks
     if locks_to_add:
         _LOGGER.debug(
             "%s (%s): Adding following locks: %s",
@@ -420,7 +520,6 @@ async def async_update_listener(hass: HomeAssistant, config_entry: ConfigEntry) 
             entry_title,
             locks_to_add,
         )
-        async_dispatcher_send(hass, f"{DOMAIN}_{entry_id}_add_locks", locks_to_add)
         for lock_entity_id in locks_to_add:
             if lock_entity_id in hass_data[CONF_LOCKS]:
                 _LOGGER.debug(
@@ -476,80 +575,122 @@ async def async_update_listener(hass: HomeAssistant, config_entry: ConfigEntry) 
                     hass, lock, config_entry
                 )
                 await coordinator.async_request_refresh()
+            # Get callbacks
+            add_sensor = hass_data[entry_id]["add_entities_callbacks"].get("sensor")
+            add_binary_sensor = hass_data[entry_id]["add_entities_callbacks"].get("binary_sensor")
+
             for slot_key in new_slots:
                 _LOGGER.debug(
-                    "%s (%s): Adding lock %s slot %s sensor and event entity",
+                    "%s (%s): Adding lock %s slot %s sensor and binary_sensor entities",
                     entry_id,
                     entry_title,
                     lock_entity_id,
                     slot_key,
                 )
-                async_dispatcher_send(
-                    hass, f"{DOMAIN}_{entry_id}_add_lock_slot", lock, slot_key, ent_reg
+                # Create entities directly (only if callbacks are available)
+                sensor_entities, binary_sensor_entities = _create_slot_entities_for_lock(
+                    hass, ent_reg, config_entry, lock, slot_key
                 )
+                if add_sensor:
+                    add_sensor(sensor_entities)
+                if add_binary_sensor:
+                    add_binary_sensor(binary_sensor_entities)
 
-    # Remove slot sensors that are no longer in the config
+    # Remove slot entities that are no longer in the config
     for slot_key in slots_to_remove.keys():
         _LOGGER.debug(
-            "%s (%s): Removing slot %s sensors", entry_id, entry_title, slot_key
+            "%s (%s): Removing slot %s entities", entry_id, entry_title, slot_key
         )
-        async_dispatcher_send(hass, f"{DOMAIN}_{entry_id}_remove_{slot_key}")
+        # Remove all entities for this slot
+        # Standard entities (not lock-specific)
+        for entity_platform, entity_key in [
+            (Platform.BINARY_SENSOR, ATTR_ACTIVE),
+            (Platform.EVENT, EVENT_PIN_USED),
+            (Platform.TEXT, CONF_NAME),
+            (Platform.TEXT, CONF_PIN),
+            (Platform.SWITCH, CONF_ENABLED),
+            (Platform.NUMBER, CONF_NUMBER_OF_USES),
+        ]:
+            unique_id = generate_entity_unique_id(entry_id, slot_key, entity_key)
+            if entity_id := ent_reg.async_get_entity_id(entity_platform, DOMAIN, unique_id):
+                ent_reg.async_remove(entity_id)
+
+        # Lock-specific entities (sensor and binary_sensor for each lock that existed)
+        for lock_entity_id in curr_locks:
+            # Remove sensor entity
+            sensor_unique_id = generate_lock_entity_unique_id(
+                entry_id, slot_key, ATTR_CODE, lock_entity_id
+            )
+            if sensor_entity_id := ent_reg.async_get_entity_id(
+                Platform.SENSOR, DOMAIN, sensor_unique_id
+            ):
+                ent_reg.async_remove(sensor_entity_id)
+
+            # Remove binary_sensor in-sync entity
+            binary_sensor_unique_id = generate_lock_entity_unique_id(
+                entry_id, slot_key, ATTR_IN_SYNC, lock_entity_id
+            )
+            if binary_sensor_entity_id := ent_reg.async_get_entity_id(
+                Platform.BINARY_SENSOR, DOMAIN, binary_sensor_unique_id
+            ):
+                ent_reg.async_remove(binary_sensor_entity_id)
+
+    # Get all callbacks once, outside the loops
+    # Use .get() to handle cases where platforms haven't been loaded yet
+    add_sensor = hass_data[entry_id]["add_entities_callbacks"].get("sensor")
+    add_binary_sensor = hass_data[entry_id]["add_entities_callbacks"].get("binary_sensor")
+    add_event = hass_data[entry_id]["add_entities_callbacks"].get("event")
+    add_text = hass_data[entry_id]["add_entities_callbacks"].get("text")
+    add_switch = hass_data[entry_id]["add_entities_callbacks"].get("switch")
+    add_number = hass_data[entry_id]["add_entities_callbacks"].get("number")
 
     # For each new slot, add standard entities and configuration entities. We also
     # add slot sensors for existing locks only since new locks were already set up
     # above.
     for slot_key, slot_config in slots_to_add.items():
-        entities_to_remove.clear()
-        # First we store the set of entities we are adding so we can track when they are
-        # done
-        entities_to_add = {
-            CONF_ENABLED: True,
-            CONF_NAME: True,
-            CONF_PIN: True,
-            EVENT_PIN_USED: True,
-        }
-        for lock_entity_id, lock in hass_data[entry_id][CONF_LOCKS].items():
-            if lock_entity_id in locks_to_add:
-                continue
-            _LOGGER.debug(
-                "%s (%s): Adding lock %s slot %s sensor",
-                entry_id,
-                entry_title,
-                lock_entity_id,
-                slot_key,
-            )
-            async_dispatcher_send(
-                hass, f"{DOMAIN}_{entry_id}_add_lock_slot", lock, slot_key, ent_reg
-            )
-
-        # Check if we need to add a number of uses entity
-        if slot_config.get(CONF_NUMBER_OF_USES) not in (None, ""):
-            entities_to_add[CONF_NUMBER_OF_USES] = True
-
         _LOGGER.debug(
-            "%s (%s): Adding PIN enabled binary sensor for slot %s",
+            "%s (%s): Adding entities for slot %s",
             entry_id,
             entry_title,
             slot_key,
         )
-        async_dispatcher_send(hass, f"{DOMAIN}_{entry_id}_add", slot_key, ent_reg)
-        for key in entities_to_add:
-            _LOGGER.debug(
-                "%s (%s): Adding %s entity for slot %s",
-                entry_id,
-                entry_title,
-                key,
-                slot_key,
+
+        # Add lock-specific entities for existing locks (new locks already done above)
+        for lock_entity_id, lock in hass_data[entry_id][CONF_LOCKS].items():
+            if lock_entity_id in locks_to_add:
+                continue
+            sensor_entities, binary_sensor_in_sync_entities = _create_slot_entities_for_lock(
+                hass, ent_reg, config_entry, lock, slot_key
             )
-            async_dispatcher_send(
-                hass, f"{DOMAIN}_{entry_id}_add_{key}", slot_key, ent_reg
-            )
+            if add_sensor:
+                add_sensor(sensor_entities)
+            if add_binary_sensor:
+                add_binary_sensor(binary_sensor_in_sync_entities)
+
+        # Create standard slot entities
+        (
+            binary_sensor_active_entities,
+            event_entities,
+            text_entities,
+            switch_entities,
+            number_entities,
+        ) = _create_standard_slot_entities(hass, ent_reg, config_entry, slot_key, slot_config)
+
+        # Add all entities (only if callbacks are available)
+        if add_binary_sensor:
+            add_binary_sensor(binary_sensor_active_entities)
+        if add_event:
+            add_event(event_entities)
+        if add_text:
+            add_text(text_entities)
+        if add_switch:
+            add_switch(switch_entities)
+        if number_entities and add_number:
+            add_number(number_entities)
 
     # For all slots that are in both the old and new config, check if any of the
     # configuration options have changed
     for slot_key in set(curr_slots).intersection(new_slots):
-        entities_to_remove.clear()
-        entities_to_add.clear()
         # Check if number of uses has changed
         old_val = curr_slots[slot_key].get(CONF_NUMBER_OF_USES)
         new_val = new_slots[slot_key].get(CONF_NUMBER_OF_USES)
@@ -558,36 +699,35 @@ async def async_update_listener(hass: HomeAssistant, config_entry: ConfigEntry) 
         if old_val == new_val:
             continue
 
-        # If number of uses value has been removed, fire a signal to remove
-        # corresponding entity
+        # If number of uses value has been removed, remove corresponding entity
         if old_val not in (None, "") and new_val in (None, ""):
-            entities_to_remove[CONF_NUMBER_OF_USES] = True
-        # If number of uses value has been added, fire a signal to add
-        # corresponding entity
-        elif old_val in (None, "") and new_val not in (None, ""):
-            entities_to_add[CONF_NUMBER_OF_USES] = True
-
-        for key in entities_to_remove:
             _LOGGER.debug(
                 "%s (%s): Removing %s entity for slot %s due to changed configuration",
                 entry_id,
                 entry_title,
-                key,
+                CONF_NUMBER_OF_USES,
                 slot_key,
             )
-            async_dispatcher_send(hass, f"{DOMAIN}_{entry_id}_remove_{slot_key}_{key}")
+            # Find and remove the entity from entity registry
+            unique_id = generate_entity_unique_id(entry_id, slot_key, CONF_NUMBER_OF_USES)
+            if entity_id := ent_reg.async_get_entity_id(Platform.NUMBER, DOMAIN, unique_id):
+                ent_reg.async_remove(entity_id)
 
-        for key in entities_to_add:
+        # If number of uses value has been added, create corresponding entity
+        elif old_val in (None, "") and new_val not in (None, ""):
             _LOGGER.debug(
                 "%s (%s): Adding %s entity for slot %s due to changed configuration",
                 entry_id,
                 entry_title,
-                key,
+                CONF_NUMBER_OF_USES,
                 slot_key,
             )
-            async_dispatcher_send(
-                hass, f"{DOMAIN}_{entry_id}_add_{key}", slot_key, ent_reg
-            )
+            # Create number entity directly (only if callback is available)
+            if add_number:
+                number_entity = LockCodeManagerNumber(
+                    hass, ent_reg, config_entry, slot_key, CONF_NUMBER_OF_USES
+                )
+                add_number([number_entity])
 
     # Existing entities will listen to updates and act on it
     new_data = {

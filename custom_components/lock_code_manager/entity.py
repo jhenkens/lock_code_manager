@@ -17,7 +17,6 @@ from homeassistant.core import (
     callback,
 )
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import DeviceInfo, Entity, EntityCategory
 from homeassistant.helpers.event import TrackStates, async_track_state_change_filtered
 
@@ -31,6 +30,7 @@ from .const import (
 )
 from .data import get_slot_data
 from .providers import BaseLock
+from .utils import generate_entity_unique_id, generate_lock_entity_unique_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -74,7 +74,9 @@ class BaseLockCodeManagerEntity(Entity):
             via_device=(DOMAIN, self.entry_id),
         )
 
-        self._attr_unique_id = f"{self.base_unique_id}|{slot_key}|{key}"
+        self._attr_unique_id = generate_entity_unique_id(
+            self.base_unique_id, slot_key, key
+        )
         self._attr_extra_state_attributes: dict[str, int | list[str]] = {
             ATTR_CODE_SLOT: int(slot_key)
         }
@@ -140,63 +142,6 @@ class BaseLockCodeManagerEntity(Entity):
         pass
 
     @callback
-    def _handle_remove_lock(self, lock_entity_id: str) -> None:
-        """
-        Handle lock entity is being removed.
-
-        Can be overwritten by platforms.
-        """
-        self.locks = [
-            lock for lock in self.locks if lock.lock.entity_id != lock_entity_id
-        ]
-
-    @callback
-    def _handle_add_locks(self, locks: list[BaseLock]) -> None:
-        """
-        Handle lock entities are being added.
-
-        Can be overwritten by platforms.
-        """
-        self.locks.extend(locks)
-
-    @callback
-    def dispatcher_connect(self) -> None:
-        """
-        Connect entity to dispatcher signals.
-
-        Can be overwritten by platforms if necessary
-        """
-        entry = self.config_entry
-        self.async_on_remove(
-            async_dispatcher_connect(
-                self.hass,
-                f"{DOMAIN}_{entry.entry_id}_remove_{self.slot_key}_{self.key}",
-                self._internal_async_remove,
-            )
-        )
-        self.async_on_remove(
-            async_dispatcher_connect(
-                self.hass,
-                f"{DOMAIN}_{entry.entry_id}_remove_{self.slot_key}",
-                self._internal_async_remove,
-            )
-        )
-        self.async_on_remove(
-            async_dispatcher_connect(
-                self.hass,
-                f"{DOMAIN}_{entry.entry_id}_remove_lock",
-                self._handle_remove_lock,
-            )
-        )
-        self.async_on_remove(
-            async_dispatcher_connect(
-                self.hass,
-                f"{DOMAIN}_{entry.entry_id}_add_locks",
-                self._handle_add_locks,
-            )
-        )
-
-    @callback
     def _event_filter(self, event_data: dict[str, Any]) -> bool:
         """Filter events."""
         return (
@@ -247,7 +192,6 @@ class BaseLockCodeManagerEntity(Entity):
         """Handle entity added to hass."""
         await Entity.async_added_to_hass(self)
 
-        self.dispatcher_connect()
         self.async_on_remove(
             async_track_state_change_filtered(
                 self.hass,
@@ -288,17 +232,9 @@ class BaseLockCodeManagerCodeSlotPerLockEntity(BaseLockCodeManagerEntity):
                 identifiers=lock.device_entry.identifiers,
             )
 
-        self._attr_unique_id = (
-            f"{self.base_unique_id}|{slot_key}|{self.key}|{lock.lock.entity_id}"
+        self._attr_unique_id = generate_lock_entity_unique_id(
+            self.base_unique_id, slot_key, self.key, lock.lock.entity_id
         )
-
-    @callback
-    def _handle_remove_lock(self, lock_entity_id: str) -> None:
-        """Handle lock entity is being removed."""
-        super()._handle_remove_lock(lock_entity_id)
-        if self.lock.lock.entity_id != lock_entity_id:
-            return
-        self.config_entry.async_create_task(self.hass, self._internal_async_remove())
 
     @callback
     def _is_available(self) -> bool:

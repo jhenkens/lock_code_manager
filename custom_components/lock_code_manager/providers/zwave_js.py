@@ -44,6 +44,7 @@ from homeassistant.core import Event, callback
 from ..const import CONF_LOCKS, CONF_SLOTS, DOMAIN
 from ..data import get_entry_data
 from ..exceptions import LockDisconnected
+from ..utils import generate_entity_unique_id
 from ._base import BaseLock
 
 _LOGGER = logging.getLogger(__name__)
@@ -254,14 +255,21 @@ class ZWaveJSLock(BaseLock):
                         in get_entry_data(config_entry, CONF_LOCKS, [])
                         and code_slot_key in get_entry_data(config_entry, CONF_SLOTS, {})
                     )
-                    base_unique_id = f"{config_entry.entry_id}|{code_slot_key}"
                     active = self.ent_reg.async_get_entity_id(
-                        SWITCH_DOMAIN, DOMAIN, f"{base_unique_id}|{CONF_ENABLED}"
+                        SWITCH_DOMAIN,
+                        DOMAIN,
+                        generate_entity_unique_id(
+                            config_entry.entry_id, code_slot_key, CONF_ENABLED
+                        ),
                     )
                     assert active
                     active_state = self.hass.states.get(active)
                     pin_entity_id = self.ent_reg.async_get_entity_id(
-                        TEXT_DOMAIN, DOMAIN, f"{base_unique_id}|{CONF_PIN}"
+                        TEXT_DOMAIN,
+                        DOMAIN,
+                        generate_entity_unique_id(
+                            config_entry.entry_id, code_slot_key, CONF_PIN
+                        ),
                     )
                     assert pin_entity_id
                     pin_state = self.hass.states.get(pin_entity_id)
