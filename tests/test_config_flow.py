@@ -154,8 +154,8 @@ async def test_config_flow_yaml(hass: HomeAssistant):
         CONF_LOCKS: [LOCK_1_ENTITY_ID],
         CONF_READ_ONLY: True,
         CONF_SLOTS: {
-            1: {CONF_ENABLED: True, CONF_PIN: "1234"},
-            2: {CONF_ENABLED: True, CONF_PIN: "5678"},
+            "1": {CONF_ENABLED: True, CONF_PIN: "1234"},
+            "2": {CONF_ENABLED: True, CONF_PIN: "5678"},
         },
     }
 
@@ -179,7 +179,7 @@ async def test_options_flow(hass: HomeAssistant):
     entry = MockConfigEntry(domain=DOMAIN, data=BASE_CONFIG, unique_id="Mock Title")
     entry.add_to_hass(hass)
     new_config = copy.deepcopy(BASE_CONFIG)
-    new_config[CONF_SLOTS][3] = {CONF_ENABLED: True, CONF_PIN: ""}
+    new_config[CONF_SLOTS]["3"] = {CONF_ENABLED: True, CONF_PIN: ""}
     result = await hass.config_entries.options.async_init(entry.entry_id)
 
     assert result["type"] == "form"
@@ -194,7 +194,7 @@ async def test_options_flow(hass: HomeAssistant):
     assert result["step_id"] == "init"
     assert result["errors"] == {"base": "invalid_config"}
 
-    new_config[CONF_SLOTS][3] = {CONF_ENABLED: True, CONF_PIN: "1234"}
+    new_config[CONF_SLOTS]["3"] = {CONF_ENABLED: True, CONF_PIN: "1234"}
     result = await hass.config_entries.options.async_configure(
         flow_id, user_input=new_config
     )
@@ -239,7 +239,7 @@ async def test_config_flow_slots_already_configured(
 
     result = await hass.config_entries.flow.async_configure(
         flow_id,
-        {CONF_SLOTS: {2: {CONF_ENABLED: False, CONF_PIN: "0123"}}},
+        {CONF_SLOTS: {"2": {CONF_ENABLED: False, CONF_PIN: "0123"}}},
     )
     assert result["errors"] == {"base": "slots_already_configured"}
 

@@ -32,8 +32,8 @@ BASE_CONFIG = {
     CONF_LOCKS: [LOCK_1_ENTITY_ID, LOCK_2_ENTITY_ID],
     CONF_READ_ONLY: False,
     CONF_SLOTS: {
-        1: {CONF_NAME: "test1", CONF_PIN: "1234", CONF_ENABLED: True},
-        2: {
+        "1": {CONF_NAME: "test1", CONF_PIN: "1234", CONF_ENABLED: True},
+        "2": {
             CONF_NAME: "test2",
             CONF_PIN: "5678",
             CONF_ENABLED: True,
@@ -66,7 +66,7 @@ class MockLCMLock(BaseLock):
         """Set up lock."""
         self.hass.data.setdefault(LOCK_DATA, {}).setdefault(
             self.lock.entity_id,
-            {"codes": {1: "1234", 2: "5678"}, "service_calls": defaultdict(list)},
+            {"codes": {"1": "1234", "2": "5678"}, "service_calls": defaultdict(list)},
         )
 
     @callback
@@ -95,14 +95,16 @@ class MockLCMLock(BaseLock):
         self, code_slot: int, usercode: int | str, name: str | None = None
     ) -> None:
         """Set a usercode on a code slot."""
-        self.hass.data[LOCK_DATA][self.lock.entity_id]["codes"][code_slot] = usercode
+        slot_key = str(code_slot)
+        self.hass.data[LOCK_DATA][self.lock.entity_id]["codes"][slot_key] = usercode
         self.hass.data[LOCK_DATA][self.lock.entity_id]["service_calls"][
             "set_usercode"
         ].append((code_slot, usercode, name))
 
     def clear_usercode(self, code_slot: int) -> None:
         """Clear a usercode on a code slot."""
-        self.hass.data[LOCK_DATA][self.lock.entity_id]["codes"].pop(code_slot, None)
+        slot_key = str(code_slot)
+        self.hass.data[LOCK_DATA][self.lock.entity_id]["codes"].pop(slot_key, None)
         self.hass.data[LOCK_DATA][self.lock.entity_id]["service_calls"][
             "clear_usercode"
         ].append((code_slot,))

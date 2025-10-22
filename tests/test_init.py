@@ -113,9 +113,9 @@ async def test_entry_setup_and_unload(
     ]
 
     new_config = copy.deepcopy(BASE_CONFIG)
-    new_config[CONF_SLOTS][1][CONF_NUMBER_OF_USES] = 5
-    new_config[CONF_SLOTS][2].pop(CONF_NUMBER_OF_USES)
-    new_config[CONF_SLOTS][3] = {
+    new_config[CONF_SLOTS]["1"][CONF_NUMBER_OF_USES] = 5
+    new_config[CONF_SLOTS]["2"].pop(CONF_NUMBER_OF_USES)
+    new_config[CONF_SLOTS]["3"] = {
         CONF_NAME: "test3",
         ATTR_CODE: "4321",
         CONF_ENABLED: True,
@@ -155,7 +155,7 @@ async def test_entry_setup_and_unload(
     assert len(hass.states.async_entity_ids(Platform.TEXT)) == 6
 
     new_config = copy.deepcopy(new_config)
-    new_config[CONF_SLOTS].pop(3)
+    new_config[CONF_SLOTS].pop("3")
     new_config[CONF_LOCKS] = [LOCK_1_ENTITY_ID]
 
     assert hass.config_entries.async_update_entry(

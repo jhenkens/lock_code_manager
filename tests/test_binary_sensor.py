@@ -141,7 +141,7 @@ async def test_binary_sensor_entity(
     ] == (2, "0987", "test2")
 
     new_config = copy.deepcopy(BASE_CONFIG)
-    new_config[CONF_SLOTS][2][CONF_CALENDAR] = "calendar.test_2"
+    new_config[CONF_SLOTS]["2"][CONF_CALENDAR] = "calendar.test_2"
 
     hass.config_entries.async_update_entry(
         lock_code_manager_config_entry, options=new_config
