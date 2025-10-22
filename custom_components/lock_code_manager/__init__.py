@@ -74,7 +74,11 @@ from .coordinator import LockUsercodeUpdateCoordinator
 from .data import get_entry_data
 from .helpers import async_create_lock_instance, get_locks_from_targets
 from .providers import BaseLock
-from .utils import generate_entity_unique_id, generate_lock_entity_unique_id
+from .utils import (
+    generate_entity_unique_id,
+    generate_lock_entity_unique_id,
+    generate_slot_device_identifier,
+)
 from .websocket import async_setup as async_websocket_setup
 
 # Import entity classes for centralized creation
@@ -636,6 +640,13 @@ async def async_update_listener(hass: HomeAssistant, config_entry: ConfigEntry) 
                 Platform.BINARY_SENSOR, DOMAIN, binary_sensor_unique_id
             ):
                 ent_reg.async_remove(binary_sensor_entity_id)
+
+        # Remove the device for this slot if it exists
+        dev_reg = dr.async_get(hass)
+        if device := dev_reg.async_get_device(
+            identifiers={generate_slot_device_identifier(entry_id, slot_key)}
+        ):
+            dev_reg.async_remove_device(device.id)
 
     # Get all callbacks once, outside the loops
     # Use .get() to handle cases where platforms haven't been loaded yet

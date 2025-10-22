@@ -47,3 +47,23 @@ def generate_lock_entity_unique_id(
 
     """
     return f"{entry_id}|{slot_key}|{entity_key}|{lock_entity_id}"
+
+
+def generate_slot_device_identifier(
+    entry_id: str,
+    slot_key: str | int,
+) -> tuple[str, str]:
+    """
+    Generate device identifier for a code slot.
+
+    Args:
+        entry_id: Config entry ID
+        slot_key: Slot number/key
+
+    Returns:
+        Device identifier tuple in format: (DOMAIN, "{entry_id}|{slot_key}")
+
+    """
+    from .const import DOMAIN
+
+    return (DOMAIN, f"{entry_id}|{slot_key}")

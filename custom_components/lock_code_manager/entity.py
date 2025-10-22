@@ -30,7 +30,11 @@ from .const import (
 )
 from .data import get_slot_data
 from .providers import BaseLock
-from .utils import generate_entity_unique_id, generate_lock_entity_unique_id
+from .utils import (
+    generate_entity_unique_id,
+    generate_lock_entity_unique_id,
+    generate_slot_device_identifier,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -68,7 +72,7 @@ class BaseLockCodeManagerEntity(Entity):
         self._attr_translation_placeholders = {"slot_key": slot_key}
 
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{self.entry_id}|{slot_key}")},
+            identifiers={generate_slot_device_identifier(self.entry_id, slot_key)},
             name=f"{config_entry.title} Code slot {slot_key}",
             manufacturer="Lock Code Manager",
             model="Code Slot",
