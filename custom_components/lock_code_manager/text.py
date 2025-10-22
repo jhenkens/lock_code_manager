@@ -35,7 +35,6 @@ class LockCodeManagerText(BaseLockCodeManagerEntity, TextEntity):
     """Text entity for lock code manager."""
 
     _attr_native_min = 0
-    _attr_native_max = 9999
     _enabled_entity_id: str = ""
 
     def __init__(
@@ -52,6 +51,9 @@ class LockCodeManagerText(BaseLockCodeManagerEntity, TextEntity):
             self, hass, ent_reg, config_entry, slot_key, key
         )
         self._attr_mode = text_mode
+        if text_mode == TextMode.PASSWORD:
+            self._attr_native_max = 8
+            self._attr_pattern: str = "^[0-9A-Z]*$"
 
     @property
     def native_value(self) -> str | None:

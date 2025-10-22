@@ -297,20 +297,6 @@ class LockCodeManagerCodeSlotInSyncEntity(
                 if self._get_entity_state(key) is None:
                     return
 
-            # Before checking if we should update, verify all states are valid
-            # (not UNKNOWN or UNAVAILABLE) to prevent syncing invalid data
-            for key in (CONF_PIN, CONF_NAME, ATTR_ACTIVE):
-                state = self._get_entity_state(key)
-                if state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-                    _LOGGER.debug(
-                        "Skipping sync check for %s slot %s: %s state is %s",
-                        self.lock.lock.entity_id,
-                        self.slot_key,
-                        key,
-                        state,
-                    )
-                    return
-
             # Check if we need to update
             if self._should_update():
                 await self.coordinator.async_refresh()
