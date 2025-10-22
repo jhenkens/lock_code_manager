@@ -257,11 +257,10 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     if hass.state == CoreState.running:
         _setup_entry_after_start(hass, config_entry)
     else:
-        config_entry.async_on_unload(
-            hass.bus.async_listen_once(
-                EVENT_HOMEASSISTANT_STARTED,
-                functools.partial(_setup_entry_after_start, hass, config_entry),
-            )
+        # One-time listeners auto-cleanup after firing, don't register with async_on_unload
+        hass.bus.async_listen_once(
+            EVENT_HOMEASSISTANT_STARTED,
+            functools.partial(_setup_entry_after_start, hass, config_entry),
         )
 
     return True

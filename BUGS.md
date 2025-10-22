@@ -44,86 +44,6 @@ The binary sensor's sync detection logic treats Unknown states during startup th
 
 ---
 
-### BUG-005: Unable to Remove Unknown Job Listener on Integration Reload
-**Priority:** MEDIUM
-**Status:** Open
-**Discovered:** 2025-10-21
-
-**Description:**
-When reloading the integration (e.g., after a config change), Home Assistant reports an error trying to remove a job listener that was registered for the `homeassistant_started` event. The listener was created during setup but cannot be removed during unload.
-
-**Log Evidence:**
-```
-2025-10-21 18:22:13.161 ERROR (MainThread) [homeassistant.core] Unable to remove unknown job listener (<Job onetime listen homeassistant_started functools.partial(<function _setup_entry_after_start at 0x7f3525ed4040>, <HomeAssistant NOT_RUNNING>, <ConfigEntry entry_id=01K841CPSS0GPZWRM9A7PKBNMY version=1 domain=lock_code_manager title=House Locks state=ConfigEntryState.SETUP_IN_PROGRESS unique_id=house_locks>) HassJobType.Callback <_OneTimeListener functools:functools.partial(<function _setup_entry_after_start at 0x7f3525ed4040>, <HomeAssistant RUNNING>, <ConfigEntry entry_id=01K841CPSS0GPZWRM9A7PKBNMY version=1 domain=lock_code_manager title=House Locks state=ConfigEntryState.UNLOAD_IN_PROGRESS unique_id=house_locks>)>>, None)
-```
-
-**Root Cause Analysis:**
-In `__init__.py` lines 257-265, the integration registers a listener for the `homeassistant_started` event:
-```python
-if hass.state == CoreState.running:
-    _setup_entry_after_start(hass, config_entry)
-else:
-    config_entry.async_on_unload(
-        hass.bus.async_listen_once(
-            EVENT_HOMEASSISTANT_STARTED,
-            functools.partial(_setup_entry_after_start, hass, config_entry),
-        )
-    )
-```
-
-The problem occurs when:
-1. Home Assistant starts and config entry is loaded BEFORE HA finishes starting
-2. A one-time listener is registered via `async_listen_once()` and tracked via `config_entry.async_on_unload()`
-3. Home Assistant finishes starting → listener fires and is auto-removed by HA
-4. User reloads integration → config entry unload tries to remove the listener again
-5. Listener is already gone → "Unable to remove unknown job listener" error
-
-**Potential Root Cause:**
-The listener has already been automatically removed by Home Assistant when the event fired, but `config_entry.async_on_unload()` doesn't know about this and tries to remove it again during unload.
-
-**Impact:**
-- Error log spam during integration reload
-- Confusing for users
-- May indicate lifecycle management issue
-- Doesn't appear to cause functional problems
-
-**Potential Fixes:**
-
-**Option 1: Store and check listener state**
-```python
-listener_remover = hass.bus.async_listen_once(
-    EVENT_HOMEASSISTANT_STARTED,
-    functools.partial(_setup_entry_after_start, hass, config_entry),
-)
-# Don't register with async_on_unload - let HA auto-remove it
-```
-
-**Option 2: Wrap listener removal in try/except**
-Not ideal - suppressing errors is bad practice.
-
-**Option 3: Check if event has already fired**
-Store a flag after `_setup_entry_after_start` executes, and only register unload callback if flag is False.
-
-**Option 4: Don't register one-time listeners with async_on_unload**
-One-time listeners are automatically cleaned up after firing. Only register persistent listeners with `async_on_unload()`.
-
-**Recommended Fix:**
-Option 4 - Don't register one-time listeners with `async_on_unload()` since they auto-cleanup. Change:
-```python
-# Before (wrong)
-config_entry.async_on_unload(
-    hass.bus.async_listen_once(...)
-)
-
-# After (correct)
-hass.bus.async_listen_once(...)
-```
-
-**Files Involved:**
-- `custom_components/lock_code_manager/__init__.py:260-265`
-
----
-
 ### BUG-006: Entity States Reset to Unknown After Config Change
 **Priority:** HIGH
 **Status:** Open
@@ -359,21 +279,20 @@ Both fixes:
 
 ## Summary
 
-**Total Active Bugs:** 4
+**Total Active Bugs:** 3
 - **High Priority:** 1 (BUG-006)
-- **Medium Priority:** 3 (BUG-004, BUG-005, BUG-007)
+- **Medium Priority:** 2 (BUG-004, BUG-007)
 
 **Status:**
 - BUG-004: Inappropriate ERROR-Level Logging - **Open**
-- BUG-005: Unable to Remove Job Listener - **Open**
+
 - BUG-006: Entities Reset to Unknown After Config Change - **Open**
 - BUG-007: Sync Logic Doesn't Clear When PIN=Unknown - **Open**
 
 **Priority Order for Fixes:**
 1. **BUG-006** (HIGH) - Entities resetting to unknown breaks user experience
 2. **BUG-007** (MEDIUM) - Security concern if codes aren't cleared
-3. **BUG-005** (MEDIUM) - Error log spam, but no functional impact
-4. **BUG-004** (MEDIUM) - Logging cleanup, cosmetic issue
+3. **BUG-004** (MEDIUM) - Logging cleanup, cosmetic issue
 
 ---
 
@@ -381,4 +300,4 @@ Both fixes:
 
 - Original logs analyzed: `Home Assistant Log Oct 21 2025.log`
 - Config entry: `01K841CPSS0GPZWRM9A7PKBNMY` (House Locks)
-- Fixed bugs archived: BUG-001, BUG-002, BUG-003
+- Fixed bugs: BUG-001, BUG-002, BUG-003, BUG-005
